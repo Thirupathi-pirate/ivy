@@ -6,3 +6,5 @@ output/
 *.egg-info/
 dist/
 build/
+blog-source/_site/
+blog-source/.bundle/

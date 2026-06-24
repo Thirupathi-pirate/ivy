@@ -1,0 +1,9 @@
+name = "daily-blog-bot"
+main = "cloudflare-worker.js"
+compatibility_date = "2026-06-01"
+
+[vars]
+# Set these via `npx wrangler secret put <NAME>` in terminal
+# TELEGRAM_BOT_TOKEN = ""
+# GITHUB_PAT = ""
+# GITHUB_REPO = "yourname/repo"

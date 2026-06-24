@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import sys
 import warnings
 
@@ -14,9 +15,8 @@ def run():
     Run the crew.
     """
     inputs = {
-
-    'topic': 'The Future of AI Agents',
-    'current_year': str(datetime.now().year)
+        'topic': os.getenv("TOPIC", "The Future of AI Agents"),
+        'current_year': str(datetime.now().year)
     }
 
     try:

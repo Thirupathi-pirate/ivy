@@ -1,18 +1,21 @@
 writing_task:
   description: >
     Use the news_search tool to research "{topic}" for the year {current_year}.
-    Search Google, find at least 5 relevant articles, and scrape their full content.
-    Then write a compelling blog post about "{topic}" based on the research.
+    Then write a comprehensive, in-depth blog post about "{topic}" that reads
+    like a high-quality Medium article — detailed, insightful, and thoroughly researched.
     The post should:
-    - Open with a hook that grabs attention
-    - Include real facts, statistics, and data from the sources
-    - Be well-structured with clear sections
-    - Be at least 6 paragraphs long
-    - End with a conclusion
-    - Use markdown formatting
+    - Open with a strong, engaging hook
+    - Weave real facts, statistics, quotes, and data throughout
+    - Include 4-6 well-developed sections with clear subheadings
+    - Be approximately 1500 words in length
+    - Use specific examples and case studies from the research
+    - End with a thoughtful conclusion that ties everything together
+    - Use clean markdown formatting (## for subheadings, **bold** for emphasis)
+    - Flow naturally from one section to the next
   expected_output: >
-    A complete blog post formatted in markdown with at least 6 paragraphs,
-    real data from sources, and clear section breaks.
+    A well-researched, comprehensive blog post in markdown format.
+    Approximately 1500 words with real data, multiple sections, and
+    a natural narrative flow. Ready for humanisation.
   agent: writer
 
 humanising_task:

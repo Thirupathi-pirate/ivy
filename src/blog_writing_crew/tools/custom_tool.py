@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class NewsSearchInput(BaseModel):
     query: str = Field(..., description="The search query to find news about")
-    max_sources: int = Field(default=7, description="Maximum number of quality sources to collect")
+    max_sources: int = Field(default=10, description="Maximum number of quality sources to collect")
 
 
 class NewsSearchTool(BaseTool):
@@ -72,7 +72,7 @@ Return ONLY a number 0-10."""
             logger.warning(f"LLM scoring failed: {e}")
             return 5
 
-    def _run(self, query: str, max_sources: int = 7) -> str:
+    def _run(self, query: str, max_sources: int = 10) -> str:
         client = self._get_tavily()
         scored_results = []
         page = 1
@@ -84,7 +84,7 @@ Return ONLY a number 0-10."""
             try:
                 response = client.search(
                     query=query,
-                    max_results=15,
+                    max_results=25,
                     search_depth="advanced",
                     include_raw_content=False,
                 )
@@ -98,7 +98,7 @@ Return ONLY a number 0-10."""
             for item in raw_results:
                 title = item.get("title", "")
                 url = item.get("url", "")
-                content = item.get("content", "")[:500]
+                content = item.get("content", "")
                 score = self._score_result(query, title, content, url)
                 logger.info(f"  Score {score}/10 — {title[:60]}")
 

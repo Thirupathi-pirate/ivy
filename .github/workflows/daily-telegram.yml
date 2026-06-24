@@ -4,13 +4,21 @@ on:
   schedule:
     - cron: '30 5 * * *'
   workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Blog topic'
+        required: false
+        default: 'The Future of AI Agents'
 
 env:
   PYTHON_VERSION: '3.11'
+  RUBY_VERSION: '3.3'
 
 jobs:
   run-crew:
     runs-on: ubuntu-latest
+    outputs:
+      post_url: ${{ steps.publish.outputs.post_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -20,25 +28,47 @@ jobs:
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install Python deps
         run: uv sync
 
       - name: Run blog writing crew
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-          MODEL: google/gemma-4-26b-a4b-it
+          TOPIC: ${{ inputs.topic || 'The Future of AI Agents' }}
         run: uv run crewai run
 
-      - name: Read blog output
+      - name: Publish post to Jekyll source
+        id: publish
         run: |
-          if [ -f output/blog_post.md ]; then
-            echo "POST<<EOF" >> $GITHUB_ENV
-            cat output/blog_post.md >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          else
-            echo "POST=No blog post was generated." >> $GITHUB_ENV
-          fi
+          uv run python scripts/publish_post.py "${{ inputs.topic || 'The Future of AI Agents' }}"
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+          working-directory: blog-source
+
+      - name: Build Jekyll site
+        run: |
+          JEKYLL_ENV=production bundle exec jekyll build
+        working-directory: blog-source
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: blog-source/_site
+          publish_branch: gh-pages
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Build post URL
+        id: url
+        run: |
+          SLUG=$(echo "${{ inputs.topic || 'The Future of AI Agents' }}" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9-]//g')
+          echo "url=https://YOURDOMAIN.com/$SLUG/" >> $GITHUB_OUTPUT
 
       - name: Send to Telegram
         uses: appleboy/telegram-action@1.1.0
@@ -48,4 +78,6 @@ jobs:
           message: |
             ✍️ *Morning Blog — {{ date 'YYYY-MM-DD' }}*
 
-            ${{ env.POST }}
+            **${{ inputs.topic || 'The Future of AI Agents' }}**
+
+            Read the full post: ${{ steps.url.outputs.url }}
