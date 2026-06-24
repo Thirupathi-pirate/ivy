@@ -39,8 +39,8 @@ class NewsSearchTool(BaseTool):
             response = client.search(
                 query=query,
                 max_results=20,
-                search_depth="basic",
-                include_raw_content=False,
+                search_depth="advanced",
+                include_raw_content=True,
             )
         except Exception as e:
             return f"Tavily search failed: {e}"
@@ -64,12 +64,12 @@ class NewsSearchTool(BaseTool):
         for i, item in enumerate(top, 1):
             title = item.get("title", "No title")
             url = item.get("url", "")
-            content = item.get("content", "")
+            body = item.get("raw_content") or item.get("content", "")
 
             output.append(f"### {i}. {title}")
             output.append(f"**Source:** {url}")
-            if content:
-                output.append(f"\n{content}\n")
+            if body:
+                output.append(f"\n{body}\n")
             output.append("---\n")
 
         return "\n".join(output)
