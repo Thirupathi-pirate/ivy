@@ -16,7 +16,7 @@ class BlogWritingCrew():
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    _llm = LLM(model="google/gemini-2.0-flash")
+    _llm = LLM(model="google/gemma-4-26b-a4b-it")
 
     @agent
     def writer(self) -> Agent:
