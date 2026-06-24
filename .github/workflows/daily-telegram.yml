@@ -1,0 +1,50 @@
+name: Daily Blog Writer
+
+on:
+  schedule:
+    - cron: '30 5 * * *'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  run-crew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run blog writing crew
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: uv run crewai run
+
+      - name: Read blog output
+        id: blog
+        run: |
+          if [ -f output/blog_post.md ]; then
+            echo "POST<<EOF" >> $GITHUB_ENV
+            cat output/blog_post.md >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          else
+            echo "POST=No blog post was generated." >> $GITHUB_ENV
+          fi
+
+      - name: Send to Telegram
+        uses: appleboy/telegram-action@1.1.0
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ✍️ *Morning Blog Post — {{ date 'YYYY-MM-DD' }}*
+
+            ${{ env.POST }}
