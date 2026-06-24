@@ -23,11 +23,8 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Install system deps for Camoufox
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libgtk-3-0 libx11-xcb1 libasound2
-
-      - name: Install Camoufox browser
-        run: uv run camoufox fetch
+      - name: Install Playwright Chromium
+        run: uv run playwright install chromium
 
       - name: Run blog writing crew
         env:

@@ -8,7 +8,7 @@ from crewai.agents.agent_builder.base_agent import BaseAgent
 
 @CrewBase
 class BlogWritingCrew():
-    """Blog Writing Crew with live web research"""
+    """Blog Writing Crew — Camoufox research + humanised writing"""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -19,26 +19,18 @@ class BlogWritingCrew():
     _llm = LLM(model="google/gemini-2.0-flash")
 
     @agent
-    def news_researcher(self) -> Agent:
+    def writer(self) -> Agent:
         return Agent(
-            config=self.agents_config["news_researcher"],  # type: ignore[index]
+            config=self.agents_config["writer"],  # type: ignore[index]
             tools=[NewsSearchTool()],
             llm=self._llm,
             verbose=True,
         )
 
     @agent
-    def data_analyst(self) -> Agent:
+    def humaniser(self) -> Agent:
         return Agent(
-            config=self.agents_config["data_analyst"],  # type: ignore[index]
-            llm=self._llm,
-            verbose=True,
-        )
-
-    @agent
-    def writer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["writer"],  # type: ignore[index]
+            config=self.agents_config["humaniser"],  # type: ignore[index]
             llm=self._llm,
             verbose=True,
         )
@@ -52,30 +44,23 @@ class BlogWritingCrew():
         )
 
     @task
-    def news_research_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["news_research_task"],  # type: ignore[index]
-        )
-
-    @task
-    def analysis_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["analysis_task"],  # type: ignore[index]
-            context=[self.news_research_task()],
-        )
-
-    @task
     def writing_task(self) -> Task:
         return Task(
             config=self.tasks_config["writing_task"],  # type: ignore[index]
-            context=[self.analysis_task()],
+        )
+
+    @task
+    def humanising_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["humanising_task"],  # type: ignore[index]
+            context=[self.writing_task()],
         )
 
     @task
     def editing_task(self) -> Task:
         return Task(
             config=self.tasks_config["editing_task"],  # type: ignore[index]
-            context=[self.writing_task()],
+            context=[self.humanising_task()],
             output_file="output/blog_post.md",
         )
 

@@ -1,61 +1,43 @@
-news_research_task:
-  description: >
-    Conduct thorough web research about "{topic}" using the news_search tool.
-    The current year is {current_year}, so focus on the most recent developments.
-    Find at least 5 relevant news articles, blog posts, or reports.
-    For each source, extract:
-    - The source URL and title
-    - Key facts, statistics, and data points
-    - Expert quotes or opinions
-    - Publication date and relevance
-    Compile everything into a detailed research document.
-  expected_output: >
-    A comprehensive research document with at least 5 sources, each containing:
-    source URL, key findings, statistics, quotes, and relevance assessment.
-  agent: news_researcher
-
-analysis_task:
-  description: >
-    Analyze the compiled research data about "{topic}".
-    Group findings into 3-4 thematic categories.
-    Identify the top 5 key trends or insights.
-    Determine the strongest narrative arc for the blog post.
-    Recommend which data points and quotes to feature prominently.
-  expected_output: >
-    A structured analysis with:
-    - Category groupings of findings
-    - Top 5 trends identified
-    - Recommended narrative structure
-    - Key data points and quotes to feature
-  agent: data_analyst
-
 writing_task:
   description: >
-    Write a compelling, data-driven blog post about "{topic}"
-    based on the research and analysis provided.
+    Use the news_search tool to research "{topic}" for the year {current_year}.
+    Search Google, find at least 5 relevant articles, and scrape their full content.
+    Then write a compelling blog post about "{topic}" based on the research.
     The post should:
-    - Open with a strong hook that grabs attention
-    - Include specific statistics, quotes, and examples from the research
-    - Have clear section headers (### style) for each major point
+    - Open with a hook that grabs attention
+    - Include real facts, statistics, and data from the sources
+    - Be well-structured with clear sections
     - Be at least 6 paragraphs long
-    - End with a forward-looking conclusion
-    - Use markdown formatting throughout
+    - End with a conclusion
+    - Use markdown formatting
   expected_output: >
-    A complete, publication-ready blog post formatted in markdown
-    with at least 6 paragraphs, section headers, data points, and quotes.
+    A complete blog post formatted in markdown with at least 6 paragraphs,
+    real data from sources, and clear section breaks.
   agent: writer
+
+humanising_task:
+  description: >
+    Rewrite the blog post to sound completely natural and human.
+    Remove all AI tone, corporate jargon, and formal language.
+    Make it sound like a knowledgeable friend explaining the topic
+    in a warm, conversational way. Use simple words, natural sentence
+    flow, and a friendly tone. Keep all the facts and data intact —
+    just change HOW it sounds. Think: warm, clear, human.
+  expected_output: >
+    The same blog post rewritten in a natural, conversational, human tone.
+    All key facts and data preserved. No AI-sounding phrasing.
+  agent: humaniser
 
 editing_task:
   description: >
-    Review and polish the blog post for:
+    Review the humanised blog post for:
     - Grammar, spelling, and punctuation
+    - Markdown formatting issues
     - Clarity and readability
-    - Logical flow and structure
-    - Factual accuracy (all claims should be traceable to sources)
-    - Consistent tone and voice
-    - Professional formatting
-    Make any necessary improvements and return the final polished version.
+    - Consistent tone (preserve the natural human voice)
+    Make any necessary fixes and return the final polished version.
   expected_output: >
-    A polished, publication-ready blog post in markdown with
-    proper formatting, clear section headers, and professional tone.
+    A polished, publication-ready blog post in markdown format,
+    clean and professional while keeping the natural human tone.
   agent: editor
+  output_file: output/blog_post.md
