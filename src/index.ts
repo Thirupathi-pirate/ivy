@@ -30,7 +30,7 @@ const MAX_HISTORY = 20;
 function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
-    "You're helpful, concise, and have a gentle sense of humor. " +
+    "You're helpful and friendly, like a good friend who happens to be very knowledgeable. " +
     "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable. " +
     `Current UTC time is: ${new Date().toISOString()}`;
 
@@ -40,7 +40,9 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
 
   prompt +=
     "\n\n💭 Before calling any tools, think through your approach inside <scratch_pad> tags. " +
-    "Plan step by step — this helps you make better decisions and use the fewest tool calls possible.";
+    "Plan step by step — this helps you make better decisions and use the fewest tool calls possible." +
+    "\n\n📖 When the user asks for information (movies, topics, explanations), provide thorough, detailed responses. " +
+    "Don't cut your answers short — include full descriptions, context, and interesting details.";
 
   if (hasMovies) {
     prompt +=
@@ -621,3 +623,33 @@ app.onError((err, c) => {
 });
 
 export default app;
+
+// ---------- Cron: Fire due reminders ----------
+export async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+  const list = await env.IVY_KV.list({ prefix: "reminder:", limit: 100 });
+  const now = Date.now();
+  for (const key of list.keys) {
+    const val = await env.IVY_KV.get(key.name);
+    if (!val) continue;
+    const parts = key.name.split(":");
+    if (parts.length < 4) continue;
+    const chatId = parseInt(parts[1], 10);
+    const timestamp = parseInt(parts[2], 10);
+    if (isNaN(chatId) || isNaN(timestamp)) continue;
+    if (timestamp <= now) {
+      const message = val.slice(0, 200);
+      try {
+        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: `⏰ *Reminder:* ${message}`,
+            parse_mode: "Markdown",
+          }),
+        });
+      } catch {}
+      await env.IVY_KV.delete(key.name);
+    }
+  }
+}
