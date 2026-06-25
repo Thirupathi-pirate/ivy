@@ -604,6 +604,22 @@ app.all("*", async (c) => {
     return c.text("Bot running. Send POST for webhook.");
   }
 
+  // Dedup: skip duplicate Telegram webhook retries
+  const raw = await c.req.raw.clone().text();
+  let updateId: number | null = null;
+  try {
+    const parsed = JSON.parse(raw);
+    updateId = parsed?.update_id ?? null;
+  } catch {}
+  if (updateId !== null) {
+    const dedupKey = `dedup:${updateId}`;
+    const seen = await c.env.IVY_KV.get(dedupKey);
+    if (seen) {
+      return c.text("OK", 200);
+    }
+    await c.env.IVY_KV.put(dedupKey, "1", { expirationTtl: 300 });
+  }
+
   const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
   setupBot(bot, c.env);
   return webhookCallback(bot, "hono")(c);
