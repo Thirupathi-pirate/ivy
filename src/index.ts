@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, webhookCallback } from "grammy";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
 import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText } from "./ai";
+import { InputFile } from "grammy";
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -65,6 +66,16 @@ function splitLongMessage(text: string, maxLen = 4096): string[] {
   const parts: string[] = [];
   for (let i = 0; i < text.length; i += maxLen) parts.push(text.slice(i, i + maxLen));
   return parts;
+}
+
+/** Find rendered image URLs (LaTeX / Mermaid) in the AI response text */
+function extractRenderImageUrls(text: string): string[] {
+  const urls: string[] = [];
+  const latexRe = /https:\/\/quicklatex\.com\/cache3\/[^\s)"']+/g;
+  const mermaidRe = /https:\/\/kroki\.io\/mermaid\/png\/[^\s)"']+/g;
+  for (const m of text.matchAll(latexRe)) urls.push(m[0]);
+  for (const m of text.matchAll(mermaidRe)) urls.push(m[0]);
+  return [...new Set(urls)];
 }
 
 /** Strip unsupported Telegram Markdown syntax before sending */
@@ -552,6 +563,18 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
       }
     }
     history.push({ role: "assistant", content: result.text });
+  }
+
+  // Send rendered images (LaTeX / Mermaid) as photos
+  const renderUrls = extractRenderImageUrls(result.text);
+  for (const url of renderUrls) {
+    try {
+      const imgResp = await fetch(url);
+      if (imgResp.ok) {
+        const blob = await imgResp.blob();
+        await ctx.api.sendPhoto(chatId, new InputFile(blob, "render.png"));
+      }
+    } catch {}
   }
 
   // Trim: keep system prompt + last N messages

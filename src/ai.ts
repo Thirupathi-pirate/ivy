@@ -688,6 +688,36 @@ function getTools(env: Env) {
     });
   }
 
+  // Render tools — always available
+  tools.push({
+    type: "function",
+    function: {
+      name: "render_latex",
+      description: "Render a LaTeX math formula to an image. Use this when the user asks about math formulas, equations, or mathematical expressions. Pass the formula WITHOUT $$ or \\[\\] delimiters.",
+      parameters: {
+        type: "object",
+        properties: {
+          formula: { type: "string", description: "The LaTeX formula (e.g., 'E = mc^2', '\\int_0^\\infty e^{-x^2} dx')" },
+        },
+        required: ["formula"],
+      },
+    },
+  });
+  tools.push({
+    type: "function",
+    function: {
+      name: "render_mermaid",
+      description: "Render a Mermaid diagram to an image. Use this when the user asks for flowcharts, sequence diagrams, class diagrams, or any visual diagram. Pass the complete Mermaid code (without ```mermaid fences).",
+      parameters: {
+        type: "object",
+        properties: {
+          diagram: { type: "string", description: "The Mermaid diagram code (e.g., 'graph TD; A-->B;')" },
+        },
+        required: ["diagram"],
+      },
+    },
+  });
+
   return tools;
 }
 
@@ -773,6 +803,10 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
       if (env.TAVILY_API_KEY) return await movieRecsTavily(env.TAVILY_API_KEY, args.title);
       return "Movie recommendations are not configured.";
     }
+    case "render_latex":
+      return await renderLatex(args.formula);
+    case "render_mermaid":
+      return await renderMermaid(args.diagram);
     case "discover_movies": {
       // TMDB → Reddit → Tavily (Reddit-targeted)
       if (env.TMDB_API_KEY) {
@@ -1039,4 +1073,40 @@ export async function fileToBase64(fileUrl: string): Promise<string> {
   const blob = await resp.blob();
   const buffer = await blob.arrayBuffer();
   return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+// ===================== LaTeX Renderer =====================
+
+export async function renderLatex(formula: string): Promise<string> {
+  const body = new URLSearchParams({
+    formula: `\\[${formula}\\]`,
+    format: "png",
+    fsize: "20",
+    fcolor: "FFFFFF",
+    mode: "0",
+    out: "1",
+    remhost: "quicklatex.com",
+  });
+  const resp = await fetch("https://quicklatex.com/latex3.f", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+  });
+  if (!resp.ok) return JSON.stringify({ error: "LaTeX render failed" });
+  const raw = await resp.text();
+  const lines = raw.trim().split("\n");
+  if (lines[0] !== "0" || !lines[1]) return JSON.stringify({ error: "LaTeX render error" });
+  return JSON.stringify({ url: lines[1].trim(), type: "latex" });
+}
+
+// ===================== Mermaid Renderer =====================
+
+export async function renderMermaid(diagram: string): Promise<string> {
+  const encoded = btoa(diagram).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const resp = await fetch(`https://kroki.io/mermaid/png/${encoded}`);
+  if (!resp.ok) return JSON.stringify({ error: "Mermaid render failed" });
+  // Return the actual image URL (kroki returns the image directly, so we upload it somewhere or use a data URI)
+  // Actually kroki can also return redirects. Let's use a different approach.
+  // We can re-upload to a temp service or just return the direct URL
+  return JSON.stringify({ url: `https://kroki.io/mermaid/png/${encoded}`, type: "mermaid" });
 }
