@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { Bot, Context, session, webhookCallback } from "grammy";
+import { Bot, Context, InlineKeyboard, session, webhookCallback } from "grammy";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
-import { processAi } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories } from "./ai";
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -15,54 +15,95 @@ interface Env {
 interface SessionData {
   history: Array<{ role: string; content?: string }>;
   model: string;
+  lastUserMessage?: string;
 }
 
 type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 20;
 
-const FALLBACK_CHAIN_DISPLAY = "`meta-llama/llama-4-scout-17b-16e-instruct` → `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`";
+function getSystemPrompt(memories?: string): string {
+  let prompt =
+    "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
+    "You're helpful, concise, and have a gentle sense of humor. " +
+    "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable. " +
+    `Current UTC time is: ${new Date().toISOString()}`;
 
-const VALID_MODELS = [
+  if (memories) {
+    prompt += `\n\n📝 Things I know about this user:\n${memories}`;
+  }
+
+  prompt +=
+    "\n\n💭 Before calling any tools, think through your approach inside <scratch_pad> tags. " +
+    "Plan step by step — this helps you make better decisions and use the fewest tool calls possible.";
+
+  return prompt;
+}
+
+const MODELS = [
   "meta-llama/llama-4-scout-17b-16e-instruct",
   "llama-3.3-70b-versatile",
   "llama-3.1-8b-instant",
 ];
 
+const FALLBACK_CHAIN_DISPLAY = MODELS.map((m) => `\`${m}\``).join(" → ");
+
+function splitLongMessage(text: string, maxLen = 4096): string[] {
+  if (text.length <= maxLen) return [text];
+  const parts: string[] = [];
+  for (let i = 0; i < text.length; i += maxLen) parts.push(text.slice(i, i + maxLen));
+  return parts;
+}
+
 function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.use(
     session({
-      initial: () => ({ history: [], model: "meta-llama/llama-4-scout-17b-16e-instruct" }),
+      initial: () => ({ history: [], model: MODELS[0] }),
       storage: new KvAdapter(env.IVY_KV),
     })
   );
 
-  bot.api.config.use((prev, method, payload, signal) => {
-    return prev(method, { ...payload, signal });
-  });
+  bot.api.config.use((prev, method, payload, signal) => prev(method, { ...payload, signal }));
+
+  // ---------- Commands ----------
 
   bot.command("start", async (ctx) => {
     await ctx.reply(
       "Hey! I'm Ivy 💜\n\n" +
-        "I'm your friendly AI assistant — I can chat, set reminders, search the web, and even help write blog posts!\n\n" +
+        "I'm your friendly AI assistant — I can chat, set reminders, search the web, " +
+        "describe images, transcribe voice, and write blog posts!\n\n" +
         "• Chat with me about anything\n" +
-        "• `/write <topic>` to generate a blog\n" +
-        "• `/clear` to reset our conversation\n" +
-        "• `/help` for all commands"
+        "• Send a photo 📸 and I'll describe it\n" +
+        "• Send a voice message 🎤 and I'll transcribe it\n" +
+        "• \`/write <topic>\` to generate a blog\n" +
+        "• \`/models\` to switch AI models\n" +
+        "• \`/new\` to reset conversation\n" +
+        "• \`/system\` to see status\n" +
+        "• \`/help\` for all commands",
+      { parse_mode: "Markdown" }
     );
   });
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
       "*Commands:*\n" +
-        "`/write <topic>` — Generate a blog post\n" +
-        "`/clear` — Reset chat history\n" +
-        "`/model <name>` — Switch AI model\n\n" +
+        "\`/write <topic>\` — Generate a blog post\n" +
+        "\`/models\` — Switch AI model (inline keyboard)\n" +
+        "\`/model <name>\` — Switch model by name\n" +
+        "\`/new\` — Reset conversation\n" +
+        "\`/redo\` — Re-send last message\n" +
+        "\`/redo <text>\` — Re-send with edited text\n" +
+        "\`/system\` — View bot status\n" +
+        "\`/clear\` — Reset chat history\n" +
+        "\`/help\` — This message\n\n" +
         "*Tips:*\n" +
         "• Ask for reminders (\"remind me at 14:30 to...\")\n" +
         "• Ask me to search the web\n" +
-        "• I remember our conversations!\n\n" +
-        "*Fallback chain:*\n" +
+        "• Send a photo 📷 for analysis\n" +
+        "• Send a voice note 🎤 for transcription\n" +
+        "• I remember facts about you across conversations 🧠\n" +
+        "• Reply to my message in groups with @Ivy\n\n" +
+        "*Models:*\n" +
         FALLBACK_CHAIN_DISPLAY,
       { parse_mode: "Markdown" }
     );
@@ -73,63 +114,146 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     await ctx.reply("Conversation reset ✅");
   });
 
+  bot.command("new", async (ctx) => {
+    ctx.session.history = [];
+    await ctx.reply("New conversation started 💬");
+  });
+
+  bot.command("forget", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    ctx.session.history = [];
+    await clearUserMemories(env.IVY_KV, chatId);
+    await ctx.reply("Memories cleared and conversation reset ✅");
+  });
+
+  bot.command("system", async (ctx) => {
+    const model = ctx.session.model;
+    const msgCount = ctx.session.history.length;
+    const chatId = ctx.chat?.id;
+    let memCount = 0;
+    if (chatId) {
+      const memList = await env.IVY_KV.list({ prefix: `memory:${chatId}:`, limit: 100 });
+      memCount = memList.keys.filter((k) => !k.name.includes(":idx:")).length;
+    }
+    await ctx.reply(
+      "*Ivy System Info*\n\n" +
+        `Model: \`${model}\`\n` +
+        `Messages in history: ${msgCount}\n` +
+        `Saved memories: ${memCount}\n` +
+        `Chat ID: \`${chatId}\`\n` +
+        `Fallback chain: ${FALLBACK_CHAIN_DISPLAY}`,
+      { parse_mode: "Markdown" }
+    );
+  });
+
   bot.command("model", async (ctx) => {
     const match = ctx.match?.trim();
     if (!match) {
       await ctx.reply(
         `Current model: \`${ctx.session.model}\`\n\n` +
-          `*Fallback chain:* ${FALLBACK_CHAIN_DISPLAY}\n\n` +
-          "Use `/model <name>` to set your preferred model (tried first, falls back through the chain on rate limits).",
+          "Use \`/models\` for the interactive menu, or \`/model <name>\` to set it directly.",
         { parse_mode: "Markdown" }
       );
       return;
     }
-    if (!VALID_MODELS.includes(match)) {
-      await ctx.reply(
-        "Invalid model. Choose one of:\n" + VALID_MODELS.map(m => `\`${m}\``).join("\n"),
-        { parse_mode: "Markdown" }
-      );
+    if (!MODELS.includes(match)) {
+      await ctx.reply("Invalid model. Choose one of:\n" + MODELS.map((m) => `\`${m}\``).join("\n"), {
+        parse_mode: "Markdown",
+      });
       return;
     }
     ctx.session.model = match;
-    await ctx.reply(`Switched preferred model to \`${match}\` ✅`, { parse_mode: "Markdown" });
+    await ctx.reply(`Switched to \`${match}\` ✅`, { parse_mode: "Markdown" });
   });
 
-  bot.on("message:text", async (ctx) => {
-    const text = ctx.message.text.trim();
+  bot.command("models", async (ctx) => {
+    const keyboard = new InlineKeyboard();
+    for (const m of MODELS) {
+      const label = m.replace("meta-llama/", "").replace("llama-", "");
+      const isActive = m === ctx.session.model;
+      keyboard.text(`${isActive ? "✅ " : ""}${label}`, `model:${m}`).row();
+    }
+    await ctx.reply("Select a model:", { reply_markup: keyboard });
+  });
+
+  bot.command("redo", async (ctx) => {
+    const lastMsg = ctx.session.lastUserMessage;
+    if (!lastMsg) {
+      await ctx.reply("No previous message to redo. Send something first!");
+      return;
+    }
+    const h = ctx.session.history;
+    if (h.length > 0 && h[h.length - 1].role === "assistant") {
+      h.pop();
+    }
+    const text = ctx.match?.trim() || lastMsg;
+    await handleChat(ctx, env, text);
+  });
+
+  // ---------- Callback Queries (Model Switching) ----------
+
+  bot.on("callback_query:data", async (ctx) => {
+    const data = ctx.callbackQuery.data;
+    if (data.startsWith("model:")) {
+      const model = data.slice(6);
+      if (MODELS.includes(model)) {
+        ctx.session.model = model;
+        await ctx.answerCallbackQuery({ text: `Switched to ${model}` });
+        const keyboard = new InlineKeyboard();
+        for (const m of MODELS) {
+          const label = m.replace("meta-llama/", "").replace("llama-", "");
+          const isActive = m === ctx.session.model;
+          keyboard.text(`${isActive ? "✅ " : ""}${label}`, `model:${m}`).row();
+        }
+        await ctx.editMessageText("Select a model:", { reply_markup: keyboard });
+      } else {
+        await ctx.answerCallbackQuery({ text: "Invalid model" });
+      }
+    }
+  });
+
+  // ---------- Text Messages ----------
+
+  bot.on(":text", async (ctx) => {
+    const msg = ctx.message;
+    if (!msg) return;
+    const text = msg.text.trim();
 
     if (text.startsWith("/write ")) {
       const topic = text.slice(7).trim();
       if (!topic) {
-        await ctx.reply("Send a topic like: `/write AI music trends 2026`");
+        await ctx.reply("Send a topic like: \`/write AI music trends 2026\`");
         return;
       }
-      await ctx.reply(
-        "✍️ Writing a blog post on **" + topic + "**...\nI'll send you the link when it's ready!",
-        { parse_mode: "Markdown" }
-      );
+      await ctx.reply("✍️ Writing a blog post on **" + topic + "**...\nI'll send you the link when it's ready!", {
+        parse_mode: "Markdown",
+      });
       const ghResp = await fetch(
         `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/daily-telegram.yml/dispatches`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${env.GITHUB_PAT}`,
-            "Accept": "application/vnd.github.v3+json",
+            Accept: "application/vnd.github.v3+json",
             "User-Agent": "telegram-bot-worker",
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ ref: "main", inputs: { topic } }),
         }
       );
-      if (!ghResp.ok) {
-        await ctx.reply("❌ Failed to trigger workflow: " + (await ghResp.text()));
-      }
+      if (!ghResp.ok) await ctx.reply("❌ Failed to trigger workflow: " + (await ghResp.text()));
       return;
     }
-
     if (text === "/write") {
-      await ctx.reply("Send a topic like: `/write AI music trends 2026`");
+      await ctx.reply("Send a topic like: \`/write AI music trends 2026\`");
       return;
+    }
+    if (text.startsWith("/")) return;
+
+    // Group chat: only respond if bot is mentioned or replying to bot
+    if (ctx.chat.type === "group" || ctx.chat.type === "supergroup") {
+      if (!isBotMentioned(ctx)) return;
     }
 
     if (!env.GROQ_API_KEY) {
@@ -137,46 +261,205 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       return;
     }
 
-    await ctx.api.sendChatAction(ctx.chat.id, "typing");
+    await handleChat(ctx, env, text);
+  });
 
-    let history = ctx.session.history;
-    if (!history.length) {
-      const system =
-        "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
-        "You're helpful, concise, and have a gentle sense of humor. " +
-        "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable. " +
-        `Current UTC time is: ${new Date().toISOString()}`;
-      history.push({ role: "system", content: system });
+  // ---------- Photos (Vision) ----------
+
+  bot.on(":photo", async (ctx) => {
+    if (!env.GROQ_API_KEY) {
+      await ctx.reply("AI chat is not configured.");
+      return;
     }
-    history.push({ role: "user", content: text });
+    const photoMsg = ctx.message;
+    if (!photoMsg) return;
+    if (ctx.chat.type === "group" || ctx.chat.type === "supergroup") {
+      if (!isBotMentioned(ctx)) return;
+    }
 
-    let reply = "";
+    const photos = photoMsg.photo!;
+    const largest = photos[photos.length - 1];
+    const file = await ctx.api.getFile(largest.file_id);
+    const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+    const caption = photoMsg.caption?.trim() || "Describe this image in detail.";
+    const placeholder = await ctx.reply("📸 Analyzing image...");
+
     try {
-      const result = await processAi(env, history, ctx.chat.id, ctx.session.model);
-      reply = result.text;
-    } catch (e: any) {
-      reply = `Error: ${e.message}`;
-    }
+      const base64 = await fileToBase64(fileUrl);
+      const dataUri = `data:image/jpeg;base64,${base64}`;
 
-    if (reply) {
-      await ctx.reply(reply, { parse_mode: "Markdown" });
-      history.push({ role: "assistant", content: reply });
-    }
-
-    if (history.length > MAX_HISTORY) {
+      let history = ctx.session.history;
+      // Load memories and refresh system prompt
+      const chatIdForMem = ctx.chat.id;
+      const photoMemories = await loadUserMemories(env.IVY_KV, chatIdForMem);
+      const sysPrompt = getSystemPrompt(photoMemories).replace(
+        "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable.",
+        "Keep responses friendly and natural, and describe images in detail when shown."
+      );
       const sysIdx = history.findIndex((m) => m.role === "system");
-      history =
-        sysIdx >= 0
+      if (sysIdx >= 0) {
+        history[sysIdx].content = sysPrompt;
+      } else {
+        history.unshift({ role: "system", content: sysPrompt });
+      }
+
+      history.push({
+        role: "user",
+        content: [
+          { type: "text", text: caption },
+          { type: "image_url", image_url: { url: dataUri } },
+        ] as any,
+      });
+
+      const result = await processAi(env, history, ctx.chat.id, ctx.session.model);
+
+      if (result.text) {
+        const parts = splitLongMessage(result.text);
+        try {
+          await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, parts[0], { parse_mode: "Markdown" });
+        } catch {
+          await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, parts[0]);
+        }
+        for (let i = 1; i < parts.length; i++) await ctx.reply(parts[i]);
+        history.push({ role: "assistant", content: result.text });
+      }
+
+      if (history.length > MAX_HISTORY) {
+        const sysIdx = history.findIndex((m) => m.role === "system");
+        history = sysIdx >= 0
           ? [history[sysIdx], ...history.slice(-(MAX_HISTORY - 1))]
           : history.slice(-MAX_HISTORY);
+      }
+      ctx.session.history = history;
+    } catch (e: any) {
+      await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, `Error: ${e.message}`);
     }
-    ctx.session.history = history;
   });
 
-  bot.catch((err) => {
-    console.error("Bot error:", err.error);
+  // ---------- Voice Messages ----------
+
+  bot.on(":voice", async (ctx) => {
+    if (!env.GROQ_API_KEY) {
+      await ctx.reply("AI chat is not configured.");
+      return;
+    }
+    const voiceMsg = ctx.message?.voice;
+    const chatId = ctx.chat?.id;
+    if (!voiceMsg || !chatId) return;
+
+    const placeholder = await ctx.reply("🎤 Transcribing voice message...");
+
+    try {
+      const file = await ctx.api.getFile(voiceMsg.file_id);
+      const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+      const transcript = await transcribeAudio(env, fileUrl);
+
+      await ctx.api.editMessageText(chatId, placeholder.message_id, `*You said:* ${transcript}`, {
+        parse_mode: "Markdown",
+      });
+
+      await handleChat(ctx, env, transcript);
+    } catch (e: any) {
+      await ctx.api.editMessageText(chatId, placeholder.message_id, `Error: ${e.message}`);
+    }
   });
+
+  bot.catch((err) => console.error("Bot error:", err.error));
 }
+
+// ---------- Helpers ----------
+
+function isBotMentioned(ctx: MyContext): boolean {
+  const msg = ctx.message!;
+  const me = ctx.me;
+  if (msg.reply_to_message?.from?.id === me.id) return true;
+  if (msg.text && msg.entities) {
+    for (const ent of msg.entities) {
+      if (ent.type === "mention") {
+        const mention = msg.text.slice(ent.offset, ent.offset + ent.length);
+        if (mention === `@${me.username}`) return true;
+      }
+      if (ent.type === "text_mention" && ent.user?.id === me.id) return true;
+    }
+  }
+  return false;
+}
+
+async function handleChat(ctx: MyContext, env: Env, text: string) {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  ctx.session.lastUserMessage = text;
+  let placeholderMsg: any;
+  try {
+    placeholderMsg = await ctx.reply("...");
+  } catch {}
+
+  const history = ctx.session.history;
+
+  // Load user memories and refresh system prompt
+  const memories = await loadUserMemories(env.IVY_KV, chatId);
+  const sysPrompt = getSystemPrompt(memories);
+  const sysIdx = history.findIndex((m) => m.role === "system");
+  if (sysIdx >= 0) {
+    history[sysIdx].content = sysPrompt;
+  } else {
+    history.unshift({ role: "system", content: sysPrompt });
+  }
+
+  history.push({ role: "user", content: text });
+
+  let result: { text: string; modelUsed: string };
+
+  try {
+    if (placeholderMsg) {
+      result = await processAiStream(
+        env,
+        history,
+        chatId,
+        async (partial, done) => {
+          if (partial) {
+            try {
+              await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, partial + (done ? "" : "\n..."), {
+                parse_mode: "Markdown",
+              });
+            } catch {}
+          }
+        },
+        ctx.session.model
+      );
+    } else {
+      result = await processAi(env, history, chatId, ctx.session.model);
+    }
+  } catch (e: any) {
+    result = { text: `Error: ${e.message}`, modelUsed: "none" };
+  }
+
+  if (result.text) {
+    const parts = splitLongMessage(result.text);
+    for (let i = 0; i < parts.length; i++) {
+      if (i === 0 && placeholderMsg) {
+        try {
+          await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "Markdown" });
+        } catch {
+          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch {}
+        }
+      } else {
+        await ctx.reply(parts[i]);
+      }
+    }
+    history.push({ role: "assistant", content: result.text });
+  }
+
+  // Trim: keep system prompt + last N messages
+  if (history.length > MAX_HISTORY) {
+    const sysIdx = history.findIndex((m) => m.role === "system");
+    ctx.session.history = sysIdx >= 0
+      ? [{ role: "system", content: getSystemPrompt() }, ...history.slice(-(MAX_HISTORY - 1))]
+      : history.slice(-MAX_HISTORY);
+  }
+}
+
+// ---------- Hono App ----------
 
 const app = new Hono<{ Bindings: Env }>();
 

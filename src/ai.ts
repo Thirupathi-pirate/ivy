@@ -1,4 +1,4 @@
-const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_API = "https://api.groq.com/openai/v1";
 
 const FALLBACK_CHAIN = [
   "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -13,9 +13,9 @@ interface Env {
   IVY_KV: KVNamespace;
 }
 
-interface GroqMessage {
+interface ChatMessage {
   role: string;
-  content?: string;
+  content?: string | any[];
   tool_call_id?: string;
 }
 
@@ -25,28 +25,78 @@ interface GroqToolCall {
   function: { name: string; arguments: string };
 }
 
-interface GroqChoice {
-  message: {
-    content?: string;
-    tool_calls?: GroqToolCall[];
-  };
+export type StreamCallback = (text: string, done: boolean) => Promise<void>;
+
+// ===================== Long-Term Memory =====================
+
+export async function loadUserMemories(kv: KVNamespace, chatId: number): Promise<string> {
+  const list = await kv.list({ prefix: `memory:${chatId}:`, limit: 50 });
+  const items: Array<{ key: string; value: string }> = [];
+  for (const k of list.keys) {
+    const keyName = k.name.slice(`memory:${chatId}:`.length);
+    const val = await kv.get(k.name);
+    if (val) items.push({ key: keyName, value: val });
+  }
+  if (!items.length) return "";
+  return items.map((m) => `${m.key}: ${m.value}`).join("\n");
 }
 
-interface GroqResponse {
-  choices: GroqChoice[];
+export async function clearUserMemories(kv: KVNamespace, chatId: number): Promise<void> {
+  const list = await kv.list({ prefix: `memory:${chatId}:` });
+  for (const k of list.keys) {
+    await kv.delete(k.name);
+  }
 }
 
-type GroqResult =
-  | GroqResponse
-  | { _retry: boolean }
-  | {
-      _rateLimited: true;
-      retryAfter: number;
-      remainingRequests: number;
-      remainingTokens: number;
-      resetRequests: string;
-      model: string;
-    };
+async function memorySave(kv: KVNamespace, chatId: number, key: string, value: string): Promise<string> {
+  await kv.put(`memory:${chatId}:${key}`, value);
+  return `Saved "${key}" = "${value}"`;
+}
+
+async function memoryRecall(kv: KVNamespace, chatId: number, key?: string): Promise<string> {
+  if (key) {
+    const val = await kv.get(`memory:${chatId}:${key}`);
+    return val ?? `No memory found for "${key}".`;
+  }
+  const list = await kv.list({ prefix: `memory:${chatId}:`, limit: 50 });
+  const items: Array<{ key: string; value: string }> = [];
+  for (const k of list.keys) {
+    const keyName = k.name.slice(`memory:${chatId}:`.length);
+    const val = await kv.get(k.name);
+    if (val) items.push({ key: keyName, value: val });
+  }
+  if (!items.length) return "No saved memories.";
+  return items.map((m) => `• ${m.key}: ${m.value}`).join("\n");
+}
+
+// ===================== URL Fetch =====================
+
+async function fetchUrl(url: string): Promise<string> {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) return `HTTP ${resp.status}: ${resp.statusText}`;
+    const text = await resp.text();
+    return text.slice(0, 8000) + (text.length > 8000 ? "\n\n[truncated]" : "");
+  } catch (e: any) {
+    return `Error fetching URL: ${e.message}`;
+  }
+}
+
+// ===================== Time =====================
+
+function getCurrentTime(timezone?: string): string {
+  const now = new Date();
+  if (timezone) {
+    try {
+      return now.toLocaleString("en-US", { timeZone: timezone });
+    } catch {
+      return `Invalid timezone. Current UTC: ${now.toISOString()}`;
+    }
+  }
+  return now.toISOString();
+}
+
+// ===================== Reminder Tools =====================
 
 async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, message: string) {
   let timestamp: number;
@@ -114,6 +164,8 @@ async function searchWeb(apiKey: string, query: string) {
   return out;
 }
 
+// ===================== Tool Definitions =====================
+
 function getTools(env: Env) {
   const tools: Array<{
     type: "function";
@@ -160,13 +212,68 @@ function getTools(env: Env) {
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "memory_save",
+        description: "Save a fact or preference about the user to long-term memory so you can recall it across conversations. Call this whenever you learn something personal about the user.",
+        parameters: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "Short descriptive key like 'name', 'favorite_color', 'job_title'" },
+            value: { type: "string", description: "The value to remember" },
+          },
+          required: ["key", "value"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "memory_recall",
+        description: "Recall saved facts or preferences about the user from long-term memory.",
+        parameters: {
+          type: "object",
+          properties: {
+            key: { type: "string", description: "Optional specific key to recall. Omit to list everything." },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "fetch_url",
+        description: "Fetch the content of a URL. Use this to read web pages, articles, docs, or API responses.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The URL to fetch" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_current_time",
+        description: "Get the current time, optionally in a specific timezone (e.g., 'America/New_York', 'Asia/Kolkata', 'UTC').",
+        parameters: {
+          type: "object",
+          properties: {
+            timezone: { type: "string", description: "Optional IANA timezone name" },
+          },
+        },
+      },
+    },
   ];
   if (env.TAVILY_API_KEY) {
     tools.push({
       type: "function",
       function: {
         name: "search_web",
-        description: "Search the web for current information on a topic. Use this for research.",
+        description: "Search the web for current information on a topic. Use this for research and fact-checking.",
         parameters: {
           type: "object",
           properties: {
@@ -180,47 +287,9 @@ function getTools(env: Env) {
   return tools;
 }
 
-async function callGroq(apiKey: string, messages: GroqMessage[], tools: any[], model: string): Promise<GroqResult> {
-  const body: Record<string, any> = {
-    model,
-    messages,
-    max_tokens: 4096,
-    temperature: 0.7,
-  };
-  if (tools.length) {
-    body.tools = tools;
-    body.tool_choice = "auto";
-  }
-  const resp = await fetch(GROQ_API, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (resp.status === 429) {
-    return {
-      _rateLimited: true,
-      retryAfter: parseInt(resp.headers.get("retry-after") || "60"),
-      remainingRequests: parseInt(resp.headers.get("x-ratelimit-remaining-requests") || "0"),
-      remainingTokens: parseInt(resp.headers.get("x-ratelimit-remaining-tokens") || "0"),
-      resetRequests: resp.headers.get("x-ratelimit-reset-requests") || "unknown",
-      model,
-    };
-  }
-  if (!resp.ok) {
-    const err = await resp.text();
-    if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) {
-      return { _retry: true };
-    }
-    throw new Error(`Groq API error ${resp.status}: ${err.slice(0, 200)}`);
-  }
-  return resp.json();
-}
+// ===================== Function Call Dispatcher =====================
 
-async function handleFunctionCall(
-  env: Env,
-  chatId: number,
-  toolCall: GroqToolCall
-): Promise<string> {
+async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCall): Promise<string> {
   const args = JSON.parse(toolCall.function.arguments);
   switch (toolCall.function.name) {
     case "create_reminder": {
@@ -234,8 +303,6 @@ async function handleFunctionCall(
         message: args.message,
       });
     }
-    case "search_web":
-      return await searchWeb(env.TAVILY_API_KEY!, args.query);
     case "list_reminders": {
       const items = await listReminders(env.IVY_KV, chatId);
       return JSON.stringify(
@@ -251,72 +318,159 @@ async function handleFunctionCall(
       const ok = await cancelReminder(env.IVY_KV, chatId, args.reminder_id);
       return JSON.stringify({ status: ok ? "cancelled" : "not_found" });
     }
+    case "search_web":
+      return await searchWeb(env.TAVILY_API_KEY!, args.query);
+    case "memory_save":
+      return await memorySave(env.IVY_KV, chatId, args.key, args.value);
+    case "memory_recall":
+      return await memoryRecall(env.IVY_KV, chatId, args.key);
+    case "fetch_url":
+      return await fetchUrl(args.url);
+    case "get_current_time":
+      return getCurrentTime(args.timezone);
     default:
       return `Unknown tool: ${toolCall.function.name}`;
   }
 }
 
-export async function processAi(
+// ===================== Groq API Call =====================
+
+async function callGroq(
+  apiKey: string,
+  messages: ChatMessage[],
+  tools: any[],
+  model: string
+): Promise<
+  | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] } }> }
+  | { _rateLimited: true; model: string }
+  | { _retry: true }
+> {
+  const body: Record<string, any> = { model, messages, max_tokens: 4096, temperature: 0.7 };
+  if (tools.length) {
+    body.tools = tools;
+    body.tool_choice = "auto";
+  }
+  const resp = await fetch(`${GROQ_API}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (resp.status === 429) return { _rateLimited: true, model };
+  if (!resp.ok) {
+    const err = await resp.text();
+    if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) return { _retry: true };
+    throw new Error(`Groq API error ${resp.status}: ${err.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
+// ===================== Simulated Streaming =====================
+
+async function revealText(onStream: StreamCallback | undefined, text: string) {
+  if (!onStream || !text) return;
+  const step = 25;
+  let pos = Math.min(60, text.length);
+  while (pos < text.length) {
+    await onStream(text.slice(0, pos), false);
+    pos = Math.min(pos + step, text.length);
+  }
+  await onStream(text, true);
+}
+
+// ===================== Main AI Processor with GOAP + Tool Loop =====================
+
+async function processAiInternal(
   env: Env,
-  history: GroqMessage[],
+  messages: ChatMessage[],
   chatId: number,
-  preferredModel?: string
+  preferredModel: string | undefined,
+  onStream?: StreamCallback,
+  maxDepth = 5
 ): Promise<{ text: string; modelUsed: string }> {
   const tools = getTools(env);
 
   const chain = preferredModel && FALLBACK_CHAIN.includes(preferredModel)
-    ? [preferredModel, ...FALLBACK_CHAIN.filter(m => m !== preferredModel)]
+    ? [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)]
     : FALLBACK_CHAIN;
-
-  const historySnapshot = JSON.parse(JSON.stringify(history));
 
   for (let attempt = 0; attempt < chain.length; attempt++) {
     const model = chain[attempt];
-
-    history.length = 0;
-    history.push(...JSON.parse(JSON.stringify(historySnapshot)));
-
+    const currentMessages: ChatMessage[] = JSON.parse(JSON.stringify(messages));
     let useTools = tools.length > 0;
-    let wasRateLimited = false;
 
-    for (let turn = 0; turn < 5; turn++) {
-      const response = await callGroq(env.GROQ_API_KEY, history, useTools ? tools : [], model);
+    for (let turn = 0; turn < maxDepth; turn++) {
+      const response = await callGroq(env.GROQ_API_KEY, currentMessages, useTools ? tools : [], model);
 
-      if ("_rateLimited" in response) {
-        wasRateLimited = true;
-        break;
-      }
-
+      if ("_rateLimited" in response) break;
       if ("_retry" in response) {
         useTools = false;
         continue;
       }
 
-      const message = (response as GroqResponse).choices[0].message;
-      if (!message.tool_calls) {
-        if (message.content) history.push({ role: "assistant", content: message.content });
-        return { text: message.content || "No response.", modelUsed: model };
-      }
+      const msg = (response as any).choices[0].message;
 
-      history.push({ role: "assistant", content: message.content || "", tool_call_id: undefined });
-      for (const tc of message.tool_calls) {
-        const result = await handleFunctionCall(env, chatId, tc);
-        history.push({ role: "tool", content: result, tool_call_id: tc.id });
-      }
-    }
-
-    if (!wasRateLimited) {
-      const resp = await callGroq(env.GROQ_API_KEY, history, [], model);
-      if (!("_rateLimited" in resp) && !("_retry" in resp)) {
-        const text = (resp as GroqResponse).choices?.[0]?.message?.content || "No response.";
-        history.push({ role: "assistant", content: text });
+      if (!msg.tool_calls) {
+        const text = msg.content || "No response.";
+        await revealText(onStream, text);
         return { text, modelUsed: model };
+      }
+
+      currentMessages.push({ role: "assistant", content: msg.content || "" });
+      for (const tc of msg.tool_calls) {
+        const result = await handleFunctionCall(env, chatId, tc);
+        currentMessages.push({ role: "tool", content: result, tool_call_id: tc.id });
       }
     }
   }
 
-  return {
-    text: "I'm rate-limited across all models right now. Please try again in a minute 💜",
-    modelUsed: "none",
-  };
+  return { text: "I'm rate-limited across all models right now. Please try again in a minute 💜", modelUsed: "none" };
+}
+
+// ===================== Public API =====================
+
+export async function processAi(
+  env: Env,
+  history: ChatMessage[],
+  chatId: number,
+  preferredModel?: string
+): Promise<{ text: string; modelUsed: string }> {
+  return processAiInternal(env, [...history], chatId, preferredModel);
+}
+
+export async function processAiStream(
+  env: Env,
+  history: ChatMessage[],
+  chatId: number,
+  onStream: StreamCallback,
+  preferredModel?: string
+): Promise<{ text: string; modelUsed: string }> {
+  return processAiInternal(env, [...history], chatId, preferredModel, onStream);
+}
+
+// ===================== Voice Transcription =====================
+
+export async function transcribeAudio(env: Env, fileUrl: string): Promise<string> {
+  const audioResp = await fetch(fileUrl);
+  const blob = await audioResp.blob();
+  const formData = new FormData();
+  formData.append("file", blob, "audio.ogg");
+  formData.append("model", "whisper-large-v3-turbo");
+  formData.append("response_format", "json");
+  const resp = await fetch(`${GROQ_API}/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.GROQ_API_KEY}` },
+    body: formData,
+  });
+  if (!resp.ok) throw new Error(`Transcription failed: ${resp.status}`);
+  const data: any = await resp.json();
+  return data.text || "";
+}
+
+// ===================== Image to base64 =====================
+
+export async function fileToBase64(fileUrl: string): Promise<string> {
+  const resp = await fetch(fileUrl);
+  const blob = await resp.blob();
+  const buffer = await blob.arrayBuffer();
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
 }
