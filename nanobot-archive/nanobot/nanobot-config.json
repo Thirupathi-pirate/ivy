@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "groq": {
+      "apiKey": "YOUR_GROQ_API_KEY",
+      "apiBase": "https://api.groq.com/openai/v1"
+    }
+  },
+  "modelPresets": {
+    "primary": {
+      "label": "Primary",
+      "provider": "groq",
+      "model": "llama-3.3-70b-versatile",
+      "maxTokens": 8192,
+      "contextWindowTokens": 131072,
+      "temperature": 0.7
+    }
+  },
+  "agents": {
+    "defaults": {
+      "modelPreset": "primary"
+    }
+  },
+  "workspace": "/home/container/workspace",
+  "memory": true
+}
