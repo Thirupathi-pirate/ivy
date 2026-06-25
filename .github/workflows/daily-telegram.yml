@@ -78,8 +78,8 @@ jobs:
         id: meta
         run: |
           echo "date=$(date +'%d-%m-%Y')" >> $GITHUB_OUTPUT
-          QUOTE_JSON=$(curl -s https://api.quotable.io/random)
-          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['content'])")
+          QUOTE_JSON=$(curl -s https://dummyjson.com/quotes/random)
+          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['quote'])")
           AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['author'])")
           echo "thought<<EOF" >> $GITHUB_OUTPUT
           echo "\"$CONTENT\" ✨" >> $GITHUB_OUTPUT
