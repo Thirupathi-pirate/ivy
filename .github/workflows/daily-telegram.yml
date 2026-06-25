@@ -66,13 +66,13 @@ jobs:
           publish_branch: gh-pages
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
-          cname: blog.aaruvi.com
+          cname: blog.aaruvi.space
 
       - name: Build post URL
         id: url
         run: |
           SLUG=$(echo "${{ inputs.topic || 'The Future of AI Agents' }}" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9-]//g')
-          echo "url=https://blog.aaruvi.com/$SLUG/" >> $GITHUB_OUTPUT
+          echo "url=https://blog.aaruvi.space/$SLUG/" >> $GITHUB_OUTPUT
 
       - name: Send to Telegram
         uses: appleboy/telegram-action@1.1.0

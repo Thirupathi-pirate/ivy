@@ -1,4 +1,4 @@
-// Cloudflare Worker — Telegram bot webhook
+// Cloudflare Worker — Telegram bot webhook for blog.aaruvi.space
 // Routes /write <topic> to GitHub Actions workflow_dispatch
 
 export default {
