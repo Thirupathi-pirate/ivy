@@ -42,10 +42,7 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
     "\n\n💭 Before calling any tools, think through your approach inside <scratch_pad> tags. " +
     "Plan step by step — this helps you make better decisions and use the fewest tool calls possible." +
     "\n\n📖 When the user asks for information (movies, topics, explanations), provide thorough, detailed responses. " +
-    "Don't cut your answers short — include full descriptions, context, and interesting details." +
-    "\n\n📐 You have render_latex and render_mermaid tools that render math formulas and diagrams as images sent directly to the user. " +
-    "IMPORTANT: When the user writes a LaTeX formula (with $$ or \\[\\]) or a Mermaid code block (\\`\\`\\`mermaid), you MUST call the corresponding tool to render it. " +
-    "Do NOT say you can't send images — these tools exist specifically for that purpose.";
+    "Don't cut your answers short — include full descriptions, context, and interesting details.";
 
   if (hasMovies) {
     prompt +=
@@ -517,25 +514,18 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
     history.unshift({ role: "system", content: sysPrompt });
   }
 
-  history.push({ role: "user", content: text });
-
-  // Auto-render Mermaid code blocks and LaTeX formulas in user messages
-  (async () => {
-    // Mermaid: ```mermaid ... ```
-    const mermaidMatch = text.match(/```mermaid\n?([\s\S]*?)```/);
-    if (mermaidMatch) {
-      try {
-        await renderMermaid(env, chatId, mermaidMatch[1].trim());
-      } catch {}
-    }
-    // LaTeX: $$ ... $$ or \[ ... \]
-    const latexMatch = text.match(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/);
-    if (latexMatch) {
-      try {
-        await renderLatex(env, chatId, (latexMatch[1] || latexMatch[2]).trim());
-      } catch {}
-    }
-  })();
+  // Auto-render Mermaid code blocks and LaTeX formulas in user messages (fire & forget)
+  const mermaidMatch = text.match(/```mermaid\n?([\s\S]*?)```/);
+  const latexMatch = text.match(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/);
+  if (mermaidMatch) {
+    renderMermaid(env, chatId, mermaidMatch[1].trim()).catch(() => {});
+  }
+  if (latexMatch) {
+    renderLatex(env, chatId, (latexMatch[1] || latexMatch[2]).trim()).catch(() => {});
+  }
+  // Strip code blocks from text sent to AI so it doesn't talk about rendering
+  const cleanText = text.replace(/```mermaid\n?[\s\S]*?```/g, "").replace(/\$\$[\s\S]*?\$\$/g, "").replace(/\\\[[\s\S]*?\\\]/g, "").trim() || text;
+  history.push({ role: "user", content: cleanText });
 
   let result: { text: string; modelUsed: string };
 

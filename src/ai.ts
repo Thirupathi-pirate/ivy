@@ -688,36 +688,6 @@ function getTools(env: Env) {
     });
   }
 
-  // Render tools — always available
-  tools.push({
-    type: "function",
-    function: {
-      name: "render_latex",
-      description: "CRITICAL: You MUST call this when the user gives you a LaTeX math formula (surrounded by $$, \\[\\], or \\(\\)). This renders the formula as a PNG image and sends it to the chat. Always use this instead of saying you can't send images.",
-      parameters: {
-        type: "object",
-        properties: {
-          formula: { type: "string", description: "The LaTeX formula (e.g., 'E = mc^2', '\\int_0^\\infty e^{-x^2} dx')" },
-        },
-        required: ["formula"],
-      },
-    },
-  });
-  tools.push({
-    type: "function",
-    function: {
-      name: "render_mermaid",
-      description: "CRITICAL: You MUST call this when the user gives you a Mermaid diagram code block (\\`\\`\\`mermaid ... \\`\\`\\`). This renders the diagram as a PNG image and sends it to the chat. Always use this instead of saying you can't send images.",
-      parameters: {
-        type: "object",
-        properties: {
-          diagram: { type: "string", description: "The complete Mermaid diagram code (e.g., 'graph TD; A-->B;')" },
-        },
-        required: ["diagram"],
-      },
-    },
-  });
-
   return tools;
 }
 
@@ -803,10 +773,6 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
       if (env.TAVILY_API_KEY) return await movieRecsTavily(env.TAVILY_API_KEY, args.title);
       return "Movie recommendations are not configured.";
     }
-    case "render_latex":
-      return await renderLatex(env, chatId, args.formula);
-    case "render_mermaid":
-      return await renderMermaid(env, chatId, args.diagram);
     case "discover_movies": {
       // TMDB → Reddit → Tavily (Reddit-targeted)
       if (env.TMDB_API_KEY) {
