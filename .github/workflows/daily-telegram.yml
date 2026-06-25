@@ -43,6 +43,8 @@ jobs:
 
       - name: Publish post to Jekyll source
         id: publish
+        env:
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
         run: |
           uv run python scripts/publish_post.py "${{ inputs.topic || 'The Future of AI Agents' }}"
 

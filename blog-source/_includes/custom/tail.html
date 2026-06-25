@@ -1,0 +1,6 @@
+<script>
+(function() {
+  var img = document.querySelector('[data-unsplash-dl]');
+  if (img) fetch(img.getAttribute('data-unsplash-dl'), {method: 'GET', mode: 'no-cors'});
+})();
+</script>

@@ -17,8 +17,9 @@ permalink: /:title/
 
 social:
   name: Daily Blog
-  email:
+  email: thirupathikmr@gmail.com
   links:
+    - https://github.com/Thirupathi-pirate
 
 paginate: 5
 
@@ -30,7 +31,20 @@ assets:
     width: 800
     height: 600
 
-toc: false
+toc: true
+
+pwa:
+  enabled: true
+  cache:
+    enabled: true
+    deny_paths:
 
 kramdown:
   syntax_highlighter: rouge
+  syntax_highlighter_opts:
+    css_class: highlight
+    span:
+      line_numbers: false
+    block:
+      line_numbers: true
+      start_line: 1

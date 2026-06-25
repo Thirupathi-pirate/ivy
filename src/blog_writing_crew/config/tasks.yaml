@@ -3,6 +3,7 @@ writing_task:
     Use the news_search tool to research "{topic}" for the year {current_year}.
     Then write a comprehensive, in-depth blog post about "{topic}" that reads
     like a high-quality Medium article — detailed, insightful, and thoroughly researched.
+
     The post should:
     - Open with a strong, engaging hook
     - Weave real facts, statistics, quotes, and data throughout
@@ -10,12 +11,27 @@ writing_task:
     - Be approximately 1500 words in length
     - Use specific examples and case studies from the research
     - End with a thoughtful conclusion that ties everything together
-    - Use clean markdown formatting (## for subheadings, **bold** for emphasis)
-    - Flow naturally from one section to the next
+    - Use clean markdown formatting
+
+    VISUAL FORMATTING REQUIREMENTS:
+    - Use relevant emoji at the start of each section header (e.g., 🚀 for future topics, 🔬 for science, 📊 for data, 💡 for insights, 🌍 for global topics, 🎯 for trends, 🤖 for AI/tech, 📈 for growth)
+    - Use **bold** for key statistics and important terms
+    - Include brief bullet lists (with hyphens) when comparing points or listing items
+    - Use blockquotes (with > ) for important quotes or key takeaways
+    - Include a Mermaid diagram where appropriate — use fenced code blocks with the mermaid language tag:
+      ```mermaid
+      graph LR or graph TD for flowcharts
+      ```
+      For example, use a flow diagram to show a process, a pie chart for data breakdowns, or a sequence diagram for timelines
+    - Add a horizontal rule (---) between major sections for visual separation
+    - Include inline markdown links to interesting sources using [text](url) format
+    - Use numbered lists for step-by-step processes
+
+    Make the post visually scannable and engaging. Think Medium meets a modern tech blog.
   expected_output: >
-    A well-researched, comprehensive blog post in markdown format.
-    Approximately 1500 words with real data, multiple sections, and
-    a natural narrative flow. Ready for humanisation.
+    A well-researched, comprehensive blog post in rich markdown format.
+    Approximately 1500 words with emoji headers, bold stats, bullet lists,
+    blockquotes, a mermaid diagram, and source links.
   agent: writer
 
 humanising_task:
@@ -26,9 +42,11 @@ humanising_task:
     in a warm, conversational way. Use simple words, natural sentence
     flow, and a friendly tone. Keep all the facts and data intact —
     just change HOW it sounds. Think: warm, clear, human.
+    PRESERVE all markdown formatting: emoji, bold, bullet lists,
+    blockquotes, mermaid code blocks, horizontal rules, and links.
   expected_output: >
     The same blog post rewritten in a natural, conversational, human tone.
-    All key facts and data preserved. No AI-sounding phrasing.
+    All key facts, data, and markdown formatting preserved.
   agent: humaniser
 
 editing_task:
@@ -39,8 +57,11 @@ editing_task:
     - Clarity and readability
     - Consistent tone (preserve the natural human voice)
     Make any necessary fixes and return the final polished version.
+    Ensure all mermaid code blocks, emoji, and special formatting
+    are correctly formed. Do NOT strip any visual formatting.
   expected_output: >
-    A polished, publication-ready blog post in markdown format,
-    clean and professional while keeping the natural human tone.
+    A polished, publication-ready blog post in rich markdown format,
+    clean and professional while keeping the natural human tone and
+    all visual elements (emoji, mermaid, lists, blockquotes, links).
   agent: editor
   output_file: output/blog_post.md

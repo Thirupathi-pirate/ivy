@@ -1,93 +1,473 @@
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap');
+/* ═══════════════════════════════════════════════
+   Midnight Purple Theme for Chirpy
+   bg: #12121E  sidebar: #1A1A2E  accent: #BB86FC
+   ═══════════════════════════════════════════════ */
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
+
+/* ── Base ── */
 body {
   font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
   line-height: 1.8;
   -webkit-font-smoothing: antialiased;
+  background: #12121E;
+  color: #E1E1EB;
 }
 
+/* ── Sidebar ── */
+#sidebar {
+  background: #1A1A2E;
+  border-right: 1px solid #2A2A3E;
+}
+
+#sidebar .site-title a {
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
+#sidebar .site-subtitle {
+  color: #9A9AB0;
+}
+
+#sidebar a {
+  color: #C4C4D4;
+  transition: color 0.2s;
+}
+
+#sidebar a:hover {
+  color: #BB86FC;
+}
+
+#sidebar .nav-item.active a {
+  color: #BB86FC;
+  font-weight: 600;
+}
+
+/* ── Post wrapper ── */
 #post-wrapper {
-  max-width: 740px;
-
-  .post-content {
-    p {
-      font-size: 1.125rem;
-      color: #292929;
-      margin-bottom: 1.8rem;
-      letter-spacing: -0.003em;
-    }
-
-    h2 {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 1.75rem;
-      font-weight: 700;
-      margin-top: 3rem;
-      margin-bottom: 1.2rem;
-      letter-spacing: -0.02em;
-    }
-
-    h3 {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 1.35rem;
-      font-weight: 600;
-      margin-top: 2.2rem;
-      margin-bottom: 0.8rem;
-    }
-
-    blockquote {
-      border-left: 3px solid #292929;
-      padding-left: 1.5rem;
-      margin: 2rem 0;
-      color: #555;
-      font-size: 1.25rem;
-      font-style: italic;
-      line-height: 1.6;
-    }
-
-    a {
-      text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-
-    ul, ol {
-      font-size: 1.125rem;
-      color: #292929;
-      line-height: 1.8;
-      margin-bottom: 1.8rem;
-    }
-
-    code {
-      font-size: 0.9rem;
-      background: #f4f4f4;
-      border-radius: 3px;
-      padding: 2px 6px;
-    }
-
-    img {
-      border-radius: 4px;
-      margin: 2rem auto;
-    }
-  }
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 20px;
 }
 
+/* ── Post title ── */
+h1.post-title {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 2.5rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: #FFFFFF;
+  margin-bottom: 0.75rem;
+}
+
+/* ── Post meta ── */
 .post-meta {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 0.875rem;
-  color: #888;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.85rem;
+  color: #7A7A8E;
   margin-bottom: 2rem;
 }
 
-h1.post-title {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 2.4rem;
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
+/* ── Featured image hero ── */
+.post-hero {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 2.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.post-hero img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.post-hero-credit {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  background: rgba(18, 18, 30, 0.8);
+  color: #9A9AB0;
+  font-family: Inter, sans-serif;
+  font-size: 0.75rem;
+  padding: 4px 12px;
+  border-top-left-radius: 8px;
+}
+
+.post-hero-credit a {
+  color: #BB86FC;
+  text-decoration: none;
+}
+
+/* ── Content typography ── */
+#post-wrapper .post-content p {
+  font-size: 1.125rem;
+  color: #E1E1EB;
+  margin-bottom: 1.8rem;
+  letter-spacing: -0.003em;
+}
+
+#post-wrapper .post-content h2 {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 3.2rem;
+  margin-bottom: 1.2rem;
+  letter-spacing: -0.02em;
+  border-bottom: 2px solid #2A2A3E;
+  padding-bottom: 0.5rem;
+}
+
+#post-wrapper .post-content h2:first-of-type {
+  margin-top: 0;
+}
+
+#post-wrapper .post-content h3 {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #D0D0E0;
+  margin-top: 2.2rem;
+  margin-bottom: 0.8rem;
+}
+
+#post-wrapper .post-content h4 {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #C4C4D4;
+  margin-top: 1.5rem;
   margin-bottom: 0.5rem;
 }
 
+/* ── Blockquotes ── */
+#post-wrapper .post-content blockquote {
+  border-left: 4px solid #BB86FC;
+  padding: 1rem 0 1rem 1.5rem;
+  margin: 2rem 0;
+  background: rgba(187, 134, 252, 0.06);
+  border-radius: 0 8px 8px 0;
+  color: #C4C4D4;
+  font-size: 1.15rem;
+  font-style: italic;
+  line-height: 1.7;
+}
+
+/* ── Chirpy prompt callouts ── */
+#post-wrapper .post-content .prompt-tip {
+  border-left-color: #BB86FC;
+  background: rgba(187, 134, 252, 0.08);
+  color: #E1E1EB;
+}
+
+#post-wrapper .post-content .prompt-info {
+  border-left-color: #64B5F6;
+  background: rgba(100, 181, 246, 0.08);
+  color: #E1E1EB;
+}
+
+#post-wrapper .post-content .prompt-warning {
+  border-left-color: #FFB74D;
+  background: rgba(255, 183, 77, 0.08);
+  color: #E1E1EB;
+}
+
+#post-wrapper .post-content .prompt-danger {
+  border-left-color: #E57373;
+  background: rgba(229, 115, 115, 0.08);
+  color: #E1E1EB;
+}
+
+/* ── Links ── */
+#post-wrapper .post-content a {
+  color: #BB86FC;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(187, 134, 252, 0.3);
+  transition: text-decoration-color 0.2s;
+}
+
+#post-wrapper .post-content a:hover {
+  text-decoration-color: #BB86FC;
+}
+
+/* ── Lists ── */
+#post-wrapper .post-content ul,
+#post-wrapper .post-content ol {
+  font-size: 1.125rem;
+  color: #E1E1EB;
+  line-height: 1.8;
+  margin-bottom: 1.8rem;
+}
+
+#post-wrapper .post-content li {
+  margin-bottom: 0.3rem;
+}
+
+/* ── Code ── */
+#post-wrapper .post-content code {
+  font-size: 0.875rem;
+  background: #1E1E32;
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: #CE93D8;
+  border: 1px solid #2A2A3E;
+}
+
+#post-wrapper .post-content pre {
+  background: #1A1A2E;
+  border: 1px solid #2A2A3E;
+  border-radius: 8px;
+  padding: 1.2rem;
+  overflow-x: auto;
+}
+
+#post-wrapper .post-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #E1E1EB;
+}
+
+/* ── Horizontal rule (section divider) ── */
+#post-wrapper .post-content hr {
+  border: none;
+  height: 2px;
+  background: linear-gradient(90deg, #2A2A3E, #BB86FC, #2A2A3E);
+  margin: 3rem 0;
+  width: 60%;
+  margin-left: auto;
+  margin-right: auto;
+  opacity: 0.5;
+}
+
+/* ── Images in posts ── */
+#post-wrapper .post-content img {
+  border-radius: 8px;
+  margin: 2rem auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Table ── */
+#post-wrapper .post-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 2rem 0;
+  font-size: 0.95rem;
+}
+
+#post-wrapper .post-content th {
+  background: #1A1A2E;
+  color: #FFFFFF;
+  font-family: Inter, sans-serif;
+  font-weight: 600;
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border: 1px solid #2A2A3E;
+}
+
+#post-wrapper .post-content td {
+  padding: 0.6rem 1rem;
+  border: 1px solid #2A2A3E;
+  color: #E1E1EB;
+}
+
+#post-wrapper .post-content tr:nth-child(even) {
+  background: rgba(26, 26, 46, 0.5);
+}
+
+/* ── Mermaid diagrams ── */
+.mermaid {
+  background: #1A1A2E;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin: 2rem 0;
+  border: 1px solid #2A2A3E;
+  overflow-x: auto;
+}
+
+/* ── Post tail mark ── */
 .post-tailmark {
   margin-top: 3rem;
   padding-top: 2rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid #2A2A3E;
+  text-align: center;
+}
+
+.post-tailmark::after {
+  content: "✦";
+  color: #BB86FC;
+  font-size: 1.2rem;
+}
+
+/* ── Unsplash attribution ── */
+.unsplash-attribution {
+  font-family: Inter, sans-serif;
+  font-size: 0.8rem;
+  color: #7A7A8E;
+  margin-top: 2rem;
+  padding: 1rem 0;
+  border-top: 1px solid #2A2A3E;
+  text-align: center;
+}
+
+.unsplash-attribution a {
+  color: #BB86FC;
+  text-decoration: none;
+}
+
+/* ── Post card on homepage ── */
+.post-card {
+  background: transparent;
+  transition: transform 0.2s ease;
+}
+
+.post-card:hover {
+  transform: translateY(-2px);
+}
+
+.post-card .card-body {
+  background: #1A1A2E;
+  border: 1px solid #2A2A3E;
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.post-card:hover .card-body {
+  border-color: #BB86FC;
+  box-shadow: 0 8px 25px rgba(187, 134, 252, 0.1);
+}
+
+.post-card .card-title a {
+  color: #FFFFFF;
+  font-family: Inter, sans-serif;
+  font-weight: 700;
+}
+
+.post-card .card-text {
+  color: #9A9AB0;
+}
+
+/* ── TOC panel ── */
+#panel-wrapper {
+  font-family: Inter, sans-serif;
+}
+
+#panel-wrapper .panel-heading {
+  color: #9A9AB0;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+#panel-wrapper a {
+  color: #9A9AB0;
+}
+
+#panel-wrapper a:hover,
+#panel-wrapper a.active {
+  color: #BB86FC;
+}
+
+/* ── Search ── */
+#search-input {
+  background: #1A1A2E;
+  border: 1px solid #2A2A3E;
+  color: #E1E1EB;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #12121E;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2A2A3E;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3A3A4E;
+}
+
+/* ── Selection ── */
+::selection {
+  background: rgba(187, 134, 252, 0.3);
+  color: #FFFFFF;
+}
+
+/* ── Footer ── */
+footer {
+  color: #7A7A8E;
+  font-family: Inter, sans-serif;
+  font-size: 0.85rem;
+}
+
+footer a {
+  color: #BB86FC;
+}
+
+/* ── Reading progress bar ── */
+#progress-bar {
+  background: linear-gradient(90deg, #BB86FC, #CE93D8);
+  height: 3px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  transition: width 0.1s ease;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  h1.post-title {
+    font-size: 1.6rem;
+  }
+
+  #post-wrapper {
+    padding: 0 16px;
+    max-width: 100%;
+  }
+
+  #post-wrapper .post-content p {
+    font-size: 1rem;
+  }
+
+  #post-wrapper .post-content h2 {
+    font-size: 1.35rem;
+  }
+
+  #post-wrapper .post-content h3 {
+    font-size: 1.15rem;
+  }
+
+  #post-wrapper .post-content ul,
+  #post-wrapper .post-content ol {
+    font-size: 1rem;
+  }
+
+  #post-wrapper .post-content blockquote {
+    font-size: 1rem;
+    padding: 0.75rem 0 0.75rem 1.2rem;
+  }
+
+  .mermaid {
+    padding: 1rem;
+  }
+
+  .post-hero {
+    border-radius: 8px;
+  }
 }
