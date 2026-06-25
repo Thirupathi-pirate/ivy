@@ -74,14 +74,14 @@ def fetch_unsplash_image(topic: str) -> dict | None:
 def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool) -> str:
     now = datetime.now()
     date = now.strftime("%Y-%m-%d %H:%M:%S %z")
-    lines = ["---", f"title: {title}", f"date: {date}", "toc: true"]
+    lines = ["---", "layout: post", f'title: "{title}"', f"date: {date}", "toc: true"]
     if mermaid:
         lines.append("mermaid: true")
     if unsplash:
         lines.extend([
             "image:",
-            f"  path: {unsplash['path']}",
-            f"  alt: {unsplash['alt']}",
+            f'  path: "{unsplash["path"]}"',
+            f'  alt: "{unsplash["alt"]}"',
             "  photographer: " + unsplash['photographer'],
             "  photographer_url: " + unsplash['photographer_url'],
             "  unsplash_url: " + unsplash['unsplash_url'],
