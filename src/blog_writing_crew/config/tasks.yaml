@@ -8,7 +8,7 @@ writing_task:
     - Open with a strong, engaging hook
     - Weave real facts, statistics, quotes, and data throughout
     - Include 4-6 well-developed sections with clear subheadings
-    - Be approximately 1500 words in length
+    - Be approximately 2200 words in length (targeting 12 minutes read time)
     - Use specific examples and case studies from the research
     - End with a thoughtful conclusion that ties everything together
     - Use clean markdown formatting
@@ -30,7 +30,7 @@ writing_task:
     Make the post visually scannable and engaging. Think Medium meets a modern tech blog.
   expected_output: >
     A well-researched, comprehensive blog post in rich markdown format.
-    Approximately 1500 words with emoji headers, bold stats, bullet lists,
+    Approximately 2200 words with emoji headers, bold stats, bullet lists,
     blockquotes, a mermaid diagram, and source links.
   agent: writer
 

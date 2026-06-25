@@ -21,6 +21,10 @@ body {
   border-right: 1px solid #2A2A3E;
 }
 
+#avatar {
+  display: none;
+}
+
 #sidebar .site-title a {
   color: #FFFFFF;
   font-weight: 700;
@@ -291,6 +295,11 @@ h1.post-title {
   margin: 2rem 0;
   border: 1px solid #2A2A3E;
   overflow-x: auto;
+}
+
+/* ── Hide CC license ── */
+.license-wrapper {
+  display: none;
 }
 
 /* ── Post tail mark ── */
