@@ -6,12 +6,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-#main-wrapper {
+#post-wrapper {
   max-width: 740px;
-  margin: 0 auto;
-  padding: 0 20px;
 
-  #post-wrapper .post-content {
+  .post-content {
     p {
       font-size: 1.125rem;
       color: #292929;

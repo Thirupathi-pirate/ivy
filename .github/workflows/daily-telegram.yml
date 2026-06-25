@@ -10,6 +10,9 @@ on:
         required: false
         default: 'The Future of AI Agents'
 
+permissions:
+  contents: write
+
 env:
   PYTHON_VERSION: '3.11'
   RUBY_VERSION: '3.3'
