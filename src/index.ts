@@ -31,7 +31,8 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
     "You're helpful and friendly, like a good friend who happens to be very knowledgeable. " +
-    "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable. " +
+    "Use memory_save to remember things the user tells you about themselves and memory_recall to retrieve them. " +
+    "You have persistent memory across conversations — anything saved via memory_save is loaded automatically next time we talk. " +
     `Current UTC time is: ${new Date().toISOString()}`;
 
   if (memories) {
@@ -583,7 +584,7 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   if (history.length > MAX_HISTORY) {
     const sysIdx = history.findIndex((m) => m.role === "system");
     ctx.session.history = sysIdx >= 0
-      ? [{ role: "system", content: getSystemPrompt() }, ...history.slice(-(MAX_HISTORY - 1))]
+      ? [{ role: "system", content: getSystemPrompt(memories, hasMovies) }, ...history.slice(-(MAX_HISTORY - 1))]
       : history.slice(-MAX_HISTORY);
   }
 }
