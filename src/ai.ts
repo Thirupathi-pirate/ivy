@@ -1,5 +1,11 @@
 const GROQ_API = "https://api.groq.com/openai/v1/chat/completions";
 
+const FALLBACK_CHAIN = [
+  "llama-4-scout-17b-16e-instruct",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+];
+
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GROQ_API_KEY: string;
@@ -30,11 +36,17 @@ interface GroqResponse {
   choices: GroqChoice[];
 }
 
-interface GroqRetry {
-  _retry: boolean;
-}
-
-// ── Reminder helpers ──────────────────────────────────────────
+type GroqResult =
+  | GroqResponse
+  | { _retry: boolean }
+  | {
+      _rateLimited: true;
+      retryAfter: number;
+      remainingRequests: number;
+      remainingTokens: number;
+      resetRequests: string;
+      model: string;
+    };
 
 async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, message: string) {
   let timestamp: number;
@@ -80,8 +92,6 @@ async function cancelReminder(kv: KVNamespace, chatId: number, reminderId: strin
   return false;
 }
 
-// ── Web search ────────────────────────────────────────────────
-
 async function searchWeb(apiKey: string, query: string) {
   const resp = await fetch("https://api.tavily.com/search", {
     method: "POST",
@@ -103,8 +113,6 @@ async function searchWeb(apiKey: string, query: string) {
     .join("\n\n");
   return out;
 }
-
-// ── Tool definitions ─────────────────────────────────────────
 
 function getTools(env: Env) {
   const tools: Array<{
@@ -172,11 +180,9 @@ function getTools(env: Env) {
   return tools;
 }
 
-// ── Groq calls ────────────────────────────────────────────────
-
-async function callGroq(apiKey: string, messages: GroqMessage[], tools: any[], model?: string): Promise<GroqResponse | GroqRetry> {
+async function callGroq(apiKey: string, messages: GroqMessage[], tools: any[], model: string): Promise<GroqResult> {
   const body: Record<string, any> = {
-    model: model || "mixtral-8x7b-32768",
+    model,
     messages,
     max_tokens: 4096,
     temperature: 0.7,
@@ -190,6 +196,16 @@ async function callGroq(apiKey: string, messages: GroqMessage[], tools: any[], m
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  if (resp.status === 429) {
+    return {
+      _rateLimited: true,
+      retryAfter: parseInt(resp.headers.get("retry-after") || "60"),
+      remainingRequests: parseInt(resp.headers.get("x-ratelimit-remaining-requests") || "0"),
+      remainingTokens: parseInt(resp.headers.get("x-ratelimit-remaining-tokens") || "0"),
+      resetRequests: resp.headers.get("x-ratelimit-reset-requests") || "unknown",
+      model,
+    };
+  }
   if (!resp.ok) {
     const err = await resp.text();
     if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) {
@@ -199,48 +215,6 @@ async function callGroq(apiKey: string, messages: GroqMessage[], tools: any[], m
   }
   return resp.json();
 }
-
-async function* streamGroq(apiKey: string, messages: GroqMessage[], model?: string) {
-  const body = {
-    model: model || "mixtral-8x7b-32768",
-    messages,
-    max_tokens: 4096,
-    temperature: 0.7,
-    stream: true,
-  };
-  const resp = await fetch(GROQ_API, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Groq stream error ${resp.status}: ${err.slice(0, 200)}`);
-  }
-  const reader = resp.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data: ")) continue;
-      const data = trimmed.slice(6);
-      if (data === "[DONE]") return;
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) yield delta;
-      } catch {}
-    }
-  }
-}
-
-// ── Orchestrator ──────────────────────────────────────────────
 
 async function handleFunctionCall(
   env: Env,
@@ -282,57 +256,67 @@ async function handleFunctionCall(
   }
 }
 
-export async function streamAiResponse(
+export async function processAi(
   env: Env,
-  draft: { edit: (text: string) => Promise<any> },
   history: GroqMessage[],
   chatId: number,
-  model?: string
-) {
+  preferredModel?: string
+): Promise<{ text: string; modelUsed: string }> {
   const tools = getTools(env);
-  let useTools = tools.length > 0;
 
-  // Tool calling loop (non-streaming)
-  for (let turn = 0; turn < 5; turn++) {
-    const response = await callGroq(env.GROQ_API_KEY, history, useTools ? tools : [], model);
-    if ("_retry" in response) {
-      useTools = false;
-      continue;
-    }
-    const message = (response as GroqResponse).choices[0].message;
-    if (!message.tool_calls) {
-      if (message.content) history.push({ role: "assistant", content: message.content });
-      break;
-    }
-    history.push({ role: "assistant", content: message.content || "", tool_call_id: undefined });
-    for (const tc of message.tool_calls) {
-      const result = await handleFunctionCall(env, chatId, tc);
-      history.push({ role: "tool", content: result, tool_call_id: tc.id });
-    }
-  }
+  const chain = preferredModel && FALLBACK_CHAIN.includes(preferredModel)
+    ? [preferredModel, ...FALLBACK_CHAIN.filter(m => m !== preferredModel)]
+    : FALLBACK_CHAIN;
 
-  // Stream the final response
-  let full = "";
-  try {
-    for await (const chunk of streamGroq(env.GROQ_API_KEY, history, model)) {
-      full += chunk;
-      if (full.length > 10) {
-        await draft.edit(full);
+  const historySnapshot = JSON.parse(JSON.stringify(history));
+
+  for (let attempt = 0; attempt < chain.length; attempt++) {
+    const model = chain[attempt];
+
+    history.length = 0;
+    history.push(...JSON.parse(JSON.stringify(historySnapshot)));
+
+    let useTools = tools.length > 0;
+    let wasRateLimited = false;
+
+    for (let turn = 0; turn < 5; turn++) {
+      const response = await callGroq(env.GROQ_API_KEY, history, useTools ? tools : [], model);
+
+      if ("_rateLimited" in response) {
+        wasRateLimited = true;
+        break;
+      }
+
+      if ("_retry" in response) {
+        useTools = false;
+        continue;
+      }
+
+      const message = (response as GroqResponse).choices[0].message;
+      if (!message.tool_calls) {
+        if (message.content) history.push({ role: "assistant", content: message.content });
+        return { text: message.content || "No response.", modelUsed: model };
+      }
+
+      history.push({ role: "assistant", content: message.content || "", tool_call_id: undefined });
+      for (const tc of message.tool_calls) {
+        const result = await handleFunctionCall(env, chatId, tc);
+        history.push({ role: "tool", content: result, tool_call_id: tc.id });
       }
     }
-  } catch (e: any) {
-    if (!full) {
+
+    if (!wasRateLimited) {
       const resp = await callGroq(env.GROQ_API_KEY, history, [], model);
-      if (!("_retry" in resp)) {
-        full = (resp as GroqResponse).choices?.[0]?.message?.content || "No response";
+      if (!("_rateLimited" in resp) && !("_retry" in resp)) {
+        const text = (resp as GroqResponse).choices?.[0]?.message?.content || "No response.";
+        history.push({ role: "assistant", content: text });
+        return { text, modelUsed: model };
       }
     }
   }
 
-  if (full) {
-    await draft.edit(full);
-    history.push({ role: "assistant", content: full });
-  } else {
-    await draft.edit("No response generated.");
-  }
+  return {
+    text: "I'm rate-limited across all models right now. Please try again in a minute 💜",
+    modelUsed: "none",
+  };
 }

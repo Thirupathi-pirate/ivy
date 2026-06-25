@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import { Bot, Context, session, webhookCallback } from "grammy";
-import { stream, type StreamFlavor } from "@grammyjs/stream";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
-import { streamAiResponse } from "./ai";
+import { processAi } from "./ai";
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -18,18 +17,25 @@ interface SessionData {
   model: string;
 }
 
-type MyContext = StreamFlavor<Context & { session: SessionData }>;
+type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 20;
+
+const FALLBACK_CHAIN_DISPLAY = "`llama-4-scout-17b-16e-instruct` → `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`";
+
+const VALID_MODELS = [
+  "llama-4-scout-17b-16e-instruct",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+];
 
 function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.use(
     session({
-      initial: () => ({ history: [], model: "mixtral-8x7b-32768" }),
+      initial: () => ({ history: [], model: "llama-4-scout-17b-16e-instruct" }),
       storage: new KvAdapter(env.IVY_KV),
     })
   );
-  bot.use(stream());
 
   bot.api.config.use((prev, method, payload, signal) => {
     return prev(method, { ...payload, signal });
@@ -37,11 +43,12 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
   bot.command("start", async (ctx) => {
     await ctx.reply(
-      "Hi! I'm Ivy's blog bot 🤖\n\n" +
-        "• Send me anything to chat\n" +
+      "Hey! I'm Ivy 💜\n\n" +
+        "I'm your friendly AI assistant — I can chat, set reminders, search the web, and even help write blog posts!\n\n" +
+        "• Chat with me about anything\n" +
         "• `/write <topic>` to generate a blog\n" +
-        "• `/clear` to reset conversation\n" +
-        "• `/help` for more info"
+        "• `/clear` to reset our conversation\n" +
+        "• `/help` for all commands"
     );
   });
 
@@ -54,7 +61,9 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "*Tips:*\n" +
         "• Ask for reminders (\"remind me at 14:30 to...\")\n" +
         "• Ask me to search the web\n" +
-        "• I remember our conversation!",
+        "• I remember our conversations!\n\n" +
+        "*Fallback chain:*\n" +
+        FALLBACK_CHAIN_DISPLAY,
       { parse_mode: "Markdown" }
     );
   });
@@ -68,27 +77,22 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     const match = ctx.match?.trim();
     if (!match) {
       await ctx.reply(
-        `Current model: \`${ctx.session.model}\`` +
-          "\n\nAvailable: `mixtral-8x7b-32768`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`",
+        `Current model: \`${ctx.session.model}\`\n\n` +
+          `*Fallback chain:* ${FALLBACK_CHAIN_DISPLAY}\n\n` +
+          "Use `/model <name>` to set your preferred model (tried first, falls back through the chain on rate limits).",
         { parse_mode: "Markdown" }
       );
       return;
     }
-    const valid = [
-      "mixtral-8x7b-32768",
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "llama-3.2-90b-vision-preview",
-    ];
-    if (!valid.includes(match)) {
+    if (!VALID_MODELS.includes(match)) {
       await ctx.reply(
-        "Invalid model. Choose: `mixtral-8x7b-32768`, `llama-3.3-70b-versatile`, `llama-3.1-8b-instant`",
+        "Invalid model. Choose one of:\n" + VALID_MODELS.map(m => `\`${m}\``).join("\n"),
         { parse_mode: "Markdown" }
       );
       return;
     }
     ctx.session.model = match;
-    await ctx.reply(`Switched to \`${match}\` ✅`, { parse_mode: "Markdown" });
+    await ctx.reply(`Switched preferred model to \`${match}\` ✅`, { parse_mode: "Markdown" });
   });
 
   bot.on("message:text", async (ctx) => {
@@ -134,22 +138,32 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     }
 
     await ctx.api.sendChatAction(ctx.chat.id, "typing");
-    const draft = await (ctx as any).draft("🤔 Thinking...");
 
     let history = ctx.session.history;
     if (!history.length) {
       const system =
-        "You are a helpful AI assistant for planning, reminders, and light research.\n" +
-        "Keep responses concise, friendly, and natural.\n" +
+        "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
+        "You're helpful, concise, and have a gentle sense of humor. " +
+        "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable. " +
         `Current UTC time is: ${new Date().toISOString()}`;
       history.push({ role: "system", content: system });
     }
     history.push({ role: "user", content: text });
 
+    let reply = "";
+    let modelUsed = "";
     try {
-      await streamAiResponse(env, draft, history, ctx.chat.id, ctx.session.model);
+      const result = await processAi(env, history, ctx.chat.id, ctx.session.model);
+      reply = result.text;
+      modelUsed = result.modelUsed;
     } catch (e: any) {
-      await draft.edit(`Error: ${e.message}`);
+      reply = `Error: ${e.message}`;
+    }
+
+    if (reply) {
+      const suffix = modelUsed && modelUsed !== "none" ? `\n\n— Ivy (via ${modelUsed})` : "";
+      await ctx.reply(reply + suffix, { parse_mode: "Markdown" });
+      history.push({ role: "assistant", content: reply });
     }
 
     if (history.length > MAX_HISTORY) {
