@@ -559,7 +559,9 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         try {
           await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "Markdown" });
         } catch {
-          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch {}
+          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch {
+            await ctx.reply(parts[i]);
+          }
         }
       } else {
         await ctx.reply(parts[i]);
