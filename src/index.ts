@@ -537,11 +537,12 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         chatId,
         async (partial, done) => {
           if (partial) {
+            const text = partial + (done ? "" : "\n...");
             try {
-              await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, partial + (done ? "" : "\n..."), {
-                parse_mode: "Markdown",
-              });
-            } catch {}
+              await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text, { parse_mode: "Markdown" });
+            } catch {
+              try { await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text); } catch {}
+            }
           }
         },
         ctx.session.model
@@ -559,9 +560,13 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
       if (i === 0 && placeholderMsg) {
         try {
           await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "Markdown" });
-        } catch {
-          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch {
-            await ctx.reply(parts[i]);
+        } catch (e1: any) {
+          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch (e2: any) {
+            const errMsg = (e2?.message || "").toLowerCase();
+            // "message is not modified" means the stream already set it — that's fine
+            if (!errMsg.includes("not modified")) {
+              await ctx.reply(parts[i]);
+            }
           }
         }
       } else {
