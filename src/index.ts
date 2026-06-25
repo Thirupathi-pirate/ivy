@@ -42,7 +42,10 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
     "\n\n💭 Before calling any tools, think through your approach inside <scratch_pad> tags. " +
     "Plan step by step — this helps you make better decisions and use the fewest tool calls possible." +
     "\n\n📖 When the user asks for information (movies, topics, explanations), provide thorough, detailed responses. " +
-    "Don't cut your answers short — include full descriptions, context, and interesting details.";
+    "Don't cut your answers short — include full descriptions, context, and interesting details." +
+    "\n\n📐 You can render LaTeX math formulas (use render_latex) and Mermaid diagrams (use render_mermaid) into images. " +
+    "When the user writes a formula (with $$ or \\(\\) or just plain) or a Mermaid code block (\\`\\`\\`mermaid), call the appropriate tool to render it as an image. " +
+    "Do NOT say you can't send images — you have these tools and they work.";
 
   if (hasMovies) {
     prompt +=
