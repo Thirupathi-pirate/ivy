@@ -78,10 +78,12 @@ jobs:
         id: meta
         run: |
           echo "date=$(date +'%d-%m-%Y')" >> $GITHUB_OUTPUT
-          QUOTE=$(curl -s https://api.quotable.io/random | \
-            python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{d[\"content\"]} — {d[\"author\"]}')" 2>/dev/null)
+          QUOTE_JSON=$(curl -s https://api.quotable.io/random)
+          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['content'])")
+          AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['author'])")
           echo "thought<<EOF" >> $GITHUB_OUTPUT
-          echo "${QUOTE:-Have a great day!}" >> $GITHUB_OUTPUT
+          echo "\"$CONTENT\"" >> $GITHUB_OUTPUT
+          echo "   — $AUTHOR" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send to Telegram
@@ -96,4 +98,4 @@ jobs:
 
             Read: ${{ steps.url.outputs.url }}
 
-            💭 ${{ steps.meta.outputs.thought }}
+            ✨ ${{ steps.meta.outputs.thought }}
