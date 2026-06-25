@@ -48,6 +48,14 @@ jobs:
         run: |
           uv run python scripts/publish_post.py "${{ inputs.topic || 'The Future of AI Agents' }}"
 
+      - name: Commit post to main (preserve for future builds)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add blog-source/_posts/
+          git commit -m "Add post: $(ls blog-source/_posts/ | tail -1) [skip ci]" || echo "No new post to commit"
+          git push
+
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
