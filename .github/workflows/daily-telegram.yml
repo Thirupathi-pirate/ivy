@@ -113,16 +113,30 @@ jobs:
 
       - name: Send failure notification
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FAILED_STEP=$(gh run view ${{ github.run_id }} --log-failed 2>&1 | grep -m1 '##\[group\]' | sed 's/.*##\[group\]//' || echo "unknown")
+          ERROR_MSG=$(gh run view ${{ github.run_id }} --log-failed 2>&1 | grep -iE '(Error:|exit code |traceback|Exception)' | head -3)
+          {
+            echo "❌ Blog Writer Failed"
+            echo ""
+            echo "Workflow: ${{ github.workflow }}"
+            echo "Trigger: ${{ github.event_name }}"
+            echo "Topic: ${{ inputs.topic || 'The Future of AI Agents' }}"
+            echo ""
+            echo "Failed step: ${FAILED_STEP}"
+            echo ""
+            echo "Error:"
+            echo "${ERROR_MSG:-No details captured}"
+            echo ""
+            echo "Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/telegram_msg.txt
+
+      - name: Send failure Telegram
+        if: failure()
         uses: appleboy/telegram-action@v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          message: |
-            ❌ Blog Writer Failed
-
-            Workflow: ${{ github.workflow }}
-            Trigger: ${{ github.event_name }}
-            Topic: ${{ inputs.topic || 'The Future of AI Agents' }}
-            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Check the logs above for details.
+          message_file: /tmp/telegram_msg.txt
