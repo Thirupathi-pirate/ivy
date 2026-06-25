@@ -1103,17 +1103,37 @@ export async function renderLatex(formula: string): Promise<string> {
   const raw = await resp.text();
   const lines = raw.trim().split("\n");
   if (lines[0] !== "0" || !lines[1]) return JSON.stringify({ error: "LaTeX render error" });
-  return JSON.stringify({ url: lines[1].trim(), type: "latex" });
+  const url = lines[1].trim().split(/\s+/)[0];
+  return JSON.stringify({ url, type: "latex" });
 }
 
 // ===================== Mermaid Renderer =====================
 
+async function deflateBase64Url(data: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(data);
+  const cs = new CompressionStream("deflate");
+  const writer = cs.writable.getWriter();
+  writer.write(bytes);
+  writer.close();
+  const reader = cs.readable.getReader();
+  const chunks: Uint8Array[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
+  const out = new Uint8Array(totalLen);
+  let offset = 0;
+  for (const c of chunks) { out.set(c, offset); offset += c.length; }
+  return btoa(String.fromCharCode(...out)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export async function renderMermaid(diagram: string): Promise<string> {
-  const encoded = btoa(diagram).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const resp = await fetch(`https://kroki.io/mermaid/png/${encoded}`);
+  const encoded = await deflateBase64Url(diagram);
+  const renderUrl = `https://kroki.io/mermaid/png/${encoded}`;
+  const resp = await fetch(renderUrl);
   if (!resp.ok) return JSON.stringify({ error: "Mermaid render failed" });
-  // Return the actual image URL (kroki returns the image directly, so we upload it somewhere or use a data URI)
-  // Actually kroki can also return redirects. Let's use a different approach.
-  // We can re-upload to a temp service or just return the direct URL
-  return JSON.stringify({ url: `https://kroki.io/mermaid/png/${encoded}`, type: "mermaid" });
+  return JSON.stringify({ url: renderUrl, type: "mermaid" });
 }
