@@ -855,6 +855,51 @@ async function revealText(onStream: StreamCallback | undefined, text: string) {
   await onStream(text, true);
 }
 
+// ===================== JSON Tool Call Fallback =====================
+
+/** Detect raw JSON function calls in model output (some models output tool calls as text instead of using the API) */
+function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | null {
+  const startMarker = '{"type":"function"';
+  for (let i = 0; i < text.length; i++) {
+    // Try matching with and without spaces after colons
+    const substr = text.slice(i);
+    if (substr.startsWith('{"type":"function"') || substr.startsWith('{"type": "function"')) {
+      let depth = 0;
+      let inString = false;
+      let escape = false;
+      for (let j = i; j < text.length; j++) {
+        const ch = text[j];
+        if (escape) { escape = false; continue; }
+        if (ch === '\\') { escape = true; continue; }
+        if (ch === '"') { inString = !inString; continue; }
+        if (inString) continue;
+        if (ch === '{') depth++;
+        if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            const raw = text.slice(i, j + 1);
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed?.type === "function" && parsed?.name && parsed?.parameters) {
+                const params = typeof parsed.parameters === "string" ? parsed.parameters : JSON.stringify(parsed.parameters);
+                return {
+                  id: `call_fallback_${Date.now()}`,
+                  type: "function",
+                  function: { name: parsed.name, arguments: params },
+                  raw,
+                };
+              }
+            } catch {}
+            break;
+          }
+        }
+      }
+      break;
+    }
+  }
+  return null;
+}
+
 // ===================== Main AI Processor with GOAP + Tool Loop =====================
 
 async function processAiInternal(
@@ -888,7 +933,16 @@ async function processAiInternal(
       const msg = (response as any).choices[0].message;
 
       if (!msg.tool_calls) {
-        const text = msg.content || "No response.";
+        // Check if the model output a raw JSON function call as text (fallback for models that don't support tool_calls properly)
+        const content = msg.content || "";
+        const jsonToolCall = extractJsonToolCall(content);
+        if (jsonToolCall) {
+          const result = await handleFunctionCall(env, chatId, jsonToolCall);
+          currentMessages.push({ role: "assistant", content: content.replace(jsonToolCall.raw, "").trim() });
+          currentMessages.push({ role: "tool", content: result, tool_call_id: jsonToolCall.id });
+          continue;
+        }
+        const text = content || "No response.";
         await revealText(onStream, text);
         return { text, modelUsed: model };
       }
