@@ -74,14 +74,26 @@ jobs:
           SLUG=$(echo "${{ inputs.topic || 'The Future of AI Agents' }}" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9-]//g')
           echo "url=https://blog.aaruvi.space/$SLUG/" >> $GITHUB_OUTPUT
 
+      - name: Meta (date + thought)
+        id: meta
+        run: |
+          echo "date=$(date +'%d-%m-%Y')" >> $GITHUB_OUTPUT
+          QUOTE=$(curl -s https://api.quotable.io/random | \
+            python3 -c "import json,sys; d=json.load(sys.stdin); print(f'{d[\"content\"]} — {d[\"author\"]}')" 2>/dev/null)
+          echo "thought<<EOF" >> $GITHUB_OUTPUT
+          echo "${QUOTE:-Have a great day!}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Send to Telegram
         uses: appleboy/telegram-action@v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ✍️ *Morning Blog — {{ date 'YYYY-MM-DD' }}*
+            ✍️ Morning Blog — ${{ steps.meta.outputs.date }}
 
-            **${{ inputs.topic || 'The Future of AI Agents' }}**
+            ${{ inputs.topic || 'The Future of AI Agents' }}
 
-            Read the full post: ${{ steps.url.outputs.url }}
+            Read: ${{ steps.url.outputs.url }}
+
+            💭 ${{ steps.meta.outputs.thought }}
