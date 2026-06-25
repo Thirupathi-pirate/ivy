@@ -606,8 +606,7 @@ app.all("*", async (c) => {
 
   const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
   setupBot(bot, c.env);
-  c.executionCtx.waitUntil(webhookCallback(bot, "hono")(c).catch(() => {}));
-  return c.text("OK");
+  return webhookCallback(bot, "hono")(c);
 });
 
 app.onError((err, c) => {
