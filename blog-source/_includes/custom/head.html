@@ -1,0 +1,182 @@
+<!-- Preconnect / DNS-Prefetch -->
+<link rel="dns-prefetch" href="//fonts.googleapis.com">
+<link rel="dns-prefetch" href="//fonts.gstatic.com">
+<link rel="dns-prefetch" href="//images.unsplash.com">
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://images.unsplash.com" crossorigin>
+
+<!-- Google Fonts (critical) — preload + stylesheet -->
+<link rel="preload" as="style" crossorigin
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="preload" as="style" crossorigin
+  href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap">
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap">
+
+<!-- Playfair Display (site title only) — non-blocking load -->
+<link rel="preload" as="style" crossorigin
+  href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&display=swap">
+<link rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&display=swap"
+  media="print" onload="this.media='all'">
+<noscript>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,700&display=swap">
+</noscript>
+
+<!-- Favicon -->
+<link rel="icon" type="image/x-icon" href="/assets/img/favicons/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicons/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicons/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="96x96" href="/assets/img/favicons/favicon-96x96.png">
+<link rel="apple-touch-icon" href="/assets/img/favicons/apple-touch-icon.png" sizes="180x180">
+
+<!-- Theme Color (mobile browser) -->
+<meta name="theme-color" content="#12121E">
+
+<!-- Canonical URL -->
+<link rel="canonical" href="{{ page.url | absolute_url }}">
+
+<!-- Meta keywords -->
+<meta name="keywords" content="technology, science, culture, tech blog, future, AI, {{ page.tags | join: ', ' | default: '' }}">
+
+<!-- Google Search Console — replace with your verification code -->
+<!-- <meta name="google-site-verification" content="YOUR_VERIFICATION_CODE" /> -->
+
+<script>
+/* Mermaid dark theme — matches Midnight Purple */
+window.mermaid = {
+  startOnLoad: true,
+  theme: 'base',
+  themeVariables: {
+    background: '#1A1A2E',
+    primaryColor: '#BB86FC',
+    primaryTextColor: '#FFFFFF',
+    primaryBorderColor: '#BB86FC',
+    lineColor: '#BB86FC',
+    secondaryColor: '#2A2A3E',
+    tertiaryColor: '#12121E',
+    edgeLabelBackground: '#1A1A2E',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '14px'
+  }
+};
+</script>
+
+<!-- Primary meta -->
+<meta name="description" content="{{ page.description | default: page.excerpt | strip_html | normalize_whitespace | truncate: 160 | default: site.description }}">
+<meta name="author" content="{{ site.social.name }}">
+
+<!-- Open Graph -->
+<meta property="og:title" content="{{ page.title | default: site.title }}">
+<meta property="og:description" content="{{ page.description | default: page.excerpt | strip_html | normalize_whitespace | truncate: 200 | default: site.description }}">
+<meta property="og:url" content="{{ page.url | absolute_url }}">
+<meta property="og:site_name" content="{{ site.title }}">
+<meta property="og:locale" content="{{ site.lang | default: 'en' }}">
+<meta property="og:type" content="{% if page.layout == 'post' %}article{% else %}website{% endif %}">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ page.title | default: site.title }}">
+<meta name="twitter:description" content="{{ page.description | default: page.excerpt | strip_html | normalize_whitespace | truncate: 200 | default: site.description }}">
+
+{% if page.image %}
+  <meta property="og:image" content="{{ page.image.path }}">
+  <meta name="twitter:image" content="{{ page.image.path }}">
+{% else %}
+  <meta property="og:image" content="{{ site.url }}/assets/avatar.webp">
+  <meta name="twitter:image" content="{{ site.url }}/assets/avatar.webp">
+{% endif %}
+
+{% if page.layout == 'post' %}
+  <meta property="article:published_time" content="{{ page.date | date_to_xmlschema }}">
+  {% if page.last_modified_at %}
+    <meta property="article:modified_time" content="{{ page.last_modified_at | date_to_xmlschema }}">
+  {% endif %}
+  <meta property="article:author" content="{{ site.url }}">
+  {% if page.tags.size > 0 %}
+    <meta property="article:tag" content="{{ page.tags | join: ', ' }}">
+  {% endif %}
+  {% if page.categories.size > 0 %}
+    <meta property="article:section" content="{{ page.categories | first }}">
+  {% endif %}
+{% endif %}
+
+<!-- Breadcrumb Schema -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "Home",
+      "item": "{{ site.url }}/"
+    }
+    {% if page.layout == 'post' %},
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": {{ page.title | jsonify }},
+      "item": "{{ page.url | absolute_url }}"
+    }
+    {% endif %}
+  ]
+}
+</script>
+
+<!-- WebSite Schema (Google Knowledge Panel) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "{{ site.title }}",
+  "url": "{{ site.url }}",
+  "description": "{{ site.description }}",
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": "{{ site.url }}/?q={search_term_string}",
+    "query-input": "required name=search_term_string"
+  }
+}
+</script>
+
+{% if page.layout == 'post' %}
+<!-- BlogPosting Schema -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": {{ page.title | jsonify }},
+  "description": {{ page.description | default: page.excerpt | strip_html | normalize_whitespace | truncate: 160 | jsonify }},
+  "datePublished": "{{ page.date | date_to_xmlschema }}"{% if page.last_modified_at %},
+  "dateModified": "{{ page.last_modified_at | date_to_xmlschema }}"{% endif %},
+  "author": {
+    "@type": "Person",
+    "name": {{ site.social.name | jsonify }},
+    "url": "{{ site.url }}"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": {{ site.title | jsonify }},
+    "logo": {
+      "@type": "ImageObject",
+      "url": "{{ site.url }}/assets/avatar.webp"
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "{{ page.url | absolute_url }}"
+  }{% if page.image %},
+  "image": {
+    "@type": "ImageObject",
+    "url": "{{ page.image.path }}"
+  }{% endif %}{% if page.tags.size > 0 %},
+  "keywords": {{ page.tags | join: ', ' | jsonify }}{% endif %}
+}
+</script>
+{% endif %}

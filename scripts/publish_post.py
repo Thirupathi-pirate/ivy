@@ -44,31 +44,32 @@ def has_mermaid(content: str) -> bool:
     return "```mermaid" in content
 
 
-def fetch_unsplash_image(topic: str) -> dict | None:
+def fetch_unsplash_images(topic: str, count: int = 2) -> list:
     if not UNSPLASH_ACCESS_KEY:
-        return None
+        return []
     try:
         url = "https://api.unsplash.com/search/photos"
-        params = {"query": topic, "per_page": 1, "orientation": "landscape"}
+        params = {"query": topic, "per_page": count, "orientation": "landscape"}
         headers = {"Authorization": f"Client-ID {UNSPLASH_ACCESS_KEY}"}
         r = requests.get(url, params=params, headers=headers, timeout=10)
         data = r.json()
-        if not data.get("results"):
-            return None
-        img = data["results"][0]
-        # Fire download notification (required by API terms)
-        requests.get(img["links"]["download_location"], headers=headers, timeout=5)
-        return {
-            "path": img["urls"]["raw"] + "&w=1200&h=630&fit=crop",
-            "alt": img.get("alt_description") or topic,
-            "photographer": img["user"]["name"],
-            "photographer_url": img["user"]["links"]["html"],
-            "unsplash_url": img["links"]["html"],
-            "download_location": img["links"]["download_location"],
-        }
+        results = data.get("results", [])
+        images = []
+        for img in results[:count]:
+            # Fire download notification (required by API terms)
+            requests.get(img["links"]["download_location"], headers=headers, timeout=5)
+            images.append({
+                "path": img["urls"]["raw"],
+                "alt": img.get("alt_description") or topic,
+                "photographer": img["user"]["name"],
+                "photographer_url": img["user"]["links"]["html"],
+                "unsplash_url": img["links"]["html"],
+                "download_location": img["links"]["download_location"],
+            })
+        return images
     except Exception as e:
         print(f"Unsplash fetch failed: {e}", file=sys.stderr)
-        return None
+        return []
 
 
 def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool) -> str:
@@ -80,7 +81,7 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
     if unsplash:
         lines.extend([
             "image:",
-            f'  path: "{unsplash["path"]}"',
+            f'  path: "{unsplash["path"]}&w=1200&h=630&fit=crop"',
             f'  alt: "{unsplash["alt"]}"',
             "  photographer: " + unsplash['photographer'],
             "  photographer_url: " + unsplash['photographer_url'],
@@ -93,20 +94,47 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
             "pin: false",
             "image:",
             "  path: /assets/avatar.webp",
-            "  alt: Daily Blog",
+            "  alt: Ivy",
         ])
     lines.append("---")
     return "\n".join(lines)
 
 
-def build_attribution(unsplash: dict | None) -> str:
-    if not unsplash:
-        return ""
-    return (
-        "\n\n---\n\n"
-        f"*📸 Cover photo by [{unsplash['photographer']}]({unsplash['photographer_url']}) "
-        f"on [Unsplash]({unsplash['unsplash_url']})*\n"
+def insert_inline_image(content: str, img: dict | None) -> str:
+    """Insert an inline image after the intro, before the first section heading."""
+    if not img:
+        return content
+    idx = content.find("\n## ")
+    if idx == -1:
+        return content
+    insert_pos = content.rfind("\n\n", 0, idx)
+    if insert_pos == -1:
+        insert_pos = idx
+    image_block = (
+        f'\n\n<div class="post-hero">\n'
+        f'  <img src="{img["path"]}&w=780&h=440&fit=crop"'
+        f' alt="{img["alt"]}" loading="lazy" width="780" height="440"'
+        f' data-unsplash-dl="{img["download_location"]}" />\n'
+        f'  <div class="post-hero-credit">📸'
+        f' <a href="{img["photographer_url"]}">{img["photographer"]}</a>'
+        f' on <a href="{img["unsplash_url"]}">Unsplash</a></div>\n'
+        f'</div>\n'
     )
+    return content[:insert_pos] + image_block + content[insert_pos:]
+
+
+def build_attribution(images: list) -> str:
+    if not images:
+        return ""
+    parts = ["\n\n---\n"]
+    for i, img in enumerate(images):
+        parts.append(
+            f"\n{i + 1}. 📸 {img['photographer']} —"
+            f" [{img['photographer']}]({img['photographer_url']})"
+            f" on [Unsplash]({img['unsplash_url']})"
+        )
+    parts.append("\n")
+    return "".join(parts)
 
 
 def main():
@@ -122,27 +150,30 @@ def main():
     slug = slugify(topic)
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # Fetch Unsplash image
-    unsplash = fetch_unsplash_image(topic)
+    images = fetch_unsplash_images(topic)
+    cover = images[0] if len(images) > 0 else None
+    inline_img = images[1] if len(images) > 1 else None
 
-    # Detect mermaid
     mermaid = has_mermaid(content)
+
+    frontmatter = build_frontmatter(title, topic, desc, cover, mermaid)
+    body = re.sub(r"^# .+\n?", "", content, count=1).strip()
+    body = insert_inline_image(body, inline_img)
+    attribution = build_attribution(images)
+    post_content = frontmatter + "\n\n" + body + attribution
 
     post_filename = f"{today}-{slug}.md"
     post_path = POSTS_DIR / post_filename
-
-    frontmatter = build_frontmatter(title, topic, desc, unsplash, mermaid)
-    body = re.sub(r"^# .+\n?", "", content, count=1).strip()
-    attribution = build_attribution(unsplash)
-    post_content = frontmatter + "\n\n" + body + attribution
 
     POSTS_DIR.mkdir(parents=True, exist_ok=True)
     post_path.write_text(post_content, encoding="utf-8")
 
     print(f"Published: {post_path}")
     print(f"URL slug: {slug}")
-    if unsplash:
-        print(f"Cover: {unsplash['path']}")
+    if cover:
+        print(f"Cover: {cover['path']}")
+    if inline_img:
+        print(f"Inline: {inline_img['path']}")
     if mermaid:
         print("Mermaid: true")
 

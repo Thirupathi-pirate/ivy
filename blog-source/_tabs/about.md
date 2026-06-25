@@ -4,18 +4,17 @@ icon: fa-regular fa-circle-info
 order: 4
 ---
 
-## About This Blog
+Ivy is a daily blog exploring the intersection of technology, science, and culture. Each article is researched from real sources and crafted to be insightful, readable, and worth your time.
 
-Every morning, an autonomous AI crew researches a trending topic,
-writes a blog post, humanises it to a natural tone, and publishes it here.
+## What You'll Find Here
 
-### The Pipeline
+- **Technology**: AI, robotics, space, biotech, and the future
+- **Science**: Research breakdowns, discoveries, and how things work
+- **Culture**: Trends, ideas, and the stories shaping our world
 
-1. **Tavily** searches the web for the latest news
-2. **Writer** agent drafts the article
-3. **Humaniser** agent rewrites it to a warm, conversational voice
-4. **Editor** agent polishes grammar and formatting
-5. Published to this site and delivered via Telegram
+Every post is built with care — backed by data, written in plain language, and designed to inform without the noise.
 
-Built with [CrewAI](https://crewai.com), [Tavily](https://tavily.com),
-and [Chirpy](https://github.com/cotes2020/jekyll-theme-chirpy).
+## Connect
+
+- GitHub: [Thirupathi-pirate](https://github.com/Thirupathi-pirate)
+- Email: [thirupathikmr@gmail.com](mailto:thirupathikmr@gmail.com)

@@ -21,10 +21,10 @@ type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 20;
 
-const FALLBACK_CHAIN_DISPLAY = "`llama-4-scout-17b-16e-instruct` → `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`";
+const FALLBACK_CHAIN_DISPLAY = "`meta-llama/llama-4-scout-17b-16e-instruct` → `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`";
 
 const VALID_MODELS = [
-  "llama-4-scout-17b-16e-instruct",
+  "meta-llama/llama-4-scout-17b-16e-instruct",
   "llama-3.3-70b-versatile",
   "llama-3.1-8b-instant",
 ];
@@ -32,7 +32,7 @@ const VALID_MODELS = [
 function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.use(
     session({
-      initial: () => ({ history: [], model: "llama-4-scout-17b-16e-instruct" }),
+      initial: () => ({ history: [], model: "meta-llama/llama-4-scout-17b-16e-instruct" }),
       storage: new KvAdapter(env.IVY_KV),
     })
   );
@@ -151,18 +151,15 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     history.push({ role: "user", content: text });
 
     let reply = "";
-    let modelUsed = "";
     try {
       const result = await processAi(env, history, ctx.chat.id, ctx.session.model);
       reply = result.text;
-      modelUsed = result.modelUsed;
     } catch (e: any) {
       reply = `Error: ${e.message}`;
     }
 
     if (reply) {
-      const suffix = modelUsed && modelUsed !== "none" ? `\n\n— Ivy (via ${modelUsed})` : "";
-      await ctx.reply(reply + suffix, { parse_mode: "Markdown" });
+      await ctx.reply(reply, { parse_mode: "Markdown" });
       history.push({ role: "assistant", content: reply });
     }
 

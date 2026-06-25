@@ -1,0 +1,15 @@
+{% if page.layout == 'post' and site.posts.size > 1 %}
+<div class="related-posts">
+  <h3>Further Reading</h3>
+  <ul>
+    {% assign max_related = 3 %}
+    {% assign related_count = 0 %}
+    {% for post in site.posts %}
+      {% if post.url != page.url and related_count < max_related %}
+        <li><a href="{{ post.url | relative_url }}">{{ post.title }}</a></li>
+        {% assign related_count = related_count | plus: 1 %}
+      {% endif %}
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

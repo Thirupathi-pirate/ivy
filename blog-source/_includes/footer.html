@@ -1,5 +1,3 @@
-<!-- The Footer (copyright only) -->
-
 <footer
   aria-label="Site Info"
   class="
@@ -10,21 +8,9 @@
   <p>
     {{- '©' }}
     <time>{{ 'now' | date: '%Y' }}</time>
-
-    {% if site.social.links %}
-      <a href="{{ site.social.links[0] }}">{{ site.social.name }}</a>.
-    {% else %}
-      <em class="fst-normal">{{ site.social.name }}</em>.
-    {% endif %}
-
-    {% if site.data.locales[include.lang].copyright.brief %}
-      <span
-        data-bs-toggle="tooltip"
-        data-bs-placement="top"
-        title="{{ site.data.locales[include.lang].copyright.verbose }}"
-      >
-        {{- site.data.locales[include.lang].copyright.brief -}}
-      </span>
-    {% endif %}
+    <a href="{{ site.social.links[0] }}">{{ site.social.name }}</a>.
+  </p>
+  <p style="margin-top: 0.25rem; font-size: 0.8rem;">
+    <a href="https://github.com/Thirupathi-pirate">GitHub</a>
   </p>
 </footer>
