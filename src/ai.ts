@@ -804,9 +804,9 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
       return "Movie recommendations are not configured.";
     }
     case "render_latex":
-      return await renderLatex(args.formula);
+      return await renderLatex(env, chatId, args.formula);
     case "render_mermaid":
-      return await renderMermaid(args.diagram);
+      return await renderMermaid(env, chatId, args.diagram);
     case "discover_movies": {
       // TMDB → Reddit → Tavily (Reddit-targeted)
       if (env.TMDB_API_KEY) {
@@ -1084,7 +1084,7 @@ export async function fileToBase64(fileUrl: string): Promise<string> {
 
 // ===================== LaTeX Renderer =====================
 
-export async function renderLatex(formula: string): Promise<string> {
+export async function renderLatex(env: Env, chatId: number, formula: string): Promise<string> {
   const body = new URLSearchParams({
     formula: `\\[${formula}\\]`,
     format: "png",
@@ -1099,12 +1099,22 @@ export async function renderLatex(formula: string): Promise<string> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  if (!resp.ok) return JSON.stringify({ error: "LaTeX render failed" });
+  if (!resp.ok) return "LaTeX render failed.";
   const raw = await resp.text();
   const lines = raw.trim().split("\n");
-  if (lines[0] !== "0" || !lines[1]) return JSON.stringify({ error: "LaTeX render error" });
+  if (lines[0] !== "0" || !lines[1]) return "LaTeX render error.";
   const url = lines[1].trim().split(/\s+/)[0];
-  return JSON.stringify({ url, type: "latex" });
+  try {
+    const imgResp = await fetch(url);
+    if (imgResp.ok) {
+      const blob = await imgResp.blob();
+      const form = new FormData();
+      form.append("chat_id", String(chatId));
+      form.append("photo", blob, "latex.png");
+      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+    }
+  } catch {}
+  return "Rendered LaTeX formula as image above.";
 }
 
 // ===================== Mermaid Renderer =====================
@@ -1130,10 +1140,17 @@ async function deflateBase64Url(data: string): Promise<string> {
   return btoa(String.fromCharCode(...out)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export async function renderMermaid(diagram: string): Promise<string> {
+export async function renderMermaid(env: Env, chatId: number, diagram: string): Promise<string> {
   const encoded = await deflateBase64Url(diagram);
   const renderUrl = `https://kroki.io/mermaid/png/${encoded}`;
   const resp = await fetch(renderUrl);
-  if (!resp.ok) return JSON.stringify({ error: "Mermaid render failed" });
-  return JSON.stringify({ url: renderUrl, type: "mermaid" });
+  if (!resp.ok) return "Mermaid render failed.";
+  try {
+    const blob = await resp.blob();
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("photo", blob, "mermaid.png");
+    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+  } catch {}
+  return "Rendered Mermaid diagram as image above.";
 }
