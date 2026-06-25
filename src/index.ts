@@ -67,6 +67,17 @@ function splitLongMessage(text: string, maxLen = 4096): string[] {
   return parts;
 }
 
+/** Strip unsupported Telegram Markdown syntax before sending */
+function sanitizeTelegramMarkdown(text: string): string {
+  return text
+    // Headings → plain text
+    .replace(/^#{1,6}\s+/gm, "")
+    // Blockquotes → plain text
+    .replace(/^>\s+/gm, "")
+    // * at line start → • (avoids italic interpretation)
+    .replace(/^(\s*)\*\s+/gm, "$1• ");
+}
+
 function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.use(
     session({
@@ -528,7 +539,7 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   }
 
   if (result.text) {
-    const parts = splitLongMessage(result.text);
+    const parts = splitLongMessage(sanitizeTelegramMarkdown(result.text));
     for (let i = 0; i < parts.length; i++) {
       if (i === 0 && placeholderMsg) {
         try {
