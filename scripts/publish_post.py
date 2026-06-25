@@ -59,7 +59,7 @@ def fetch_unsplash_images(topic: str, count: int = 2) -> list:
             # Fire download notification (required by API terms)
             requests.get(img["links"]["download_location"], headers=headers, timeout=5)
             images.append({
-                "path": img["urls"]["raw"],
+                "path": img["urls"]["raw"] + "&fm=webp",
                 "alt": img.get("alt_description") or topic,
                 "photographer": img["user"]["name"],
                 "photographer_url": img["user"]["links"]["html"],

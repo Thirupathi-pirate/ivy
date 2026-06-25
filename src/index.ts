@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, webhookCallback } from "grammy";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText } from "./ai";
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -9,6 +9,10 @@ interface Env {
   GITHUB_PAT: string;
   GITHUB_REPO: string;
   TAVILY_API_KEY?: string;
+  TMDB_API_KEY?: string;
+  REDDIT_CLIENT_ID?: string;
+  REDDIT_CLIENT_SECRET?: string;
+  REDDIT_USER_AGENT?: string;
   IVY_KV: KVNamespace;
 }
 
@@ -22,7 +26,7 @@ type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 20;
 
-function getSystemPrompt(memories?: string): string {
+function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
     "You're helpful, concise, and have a gentle sense of humor. " +
@@ -36,6 +40,14 @@ function getSystemPrompt(memories?: string): string {
   prompt +=
     "\n\n💭 Before calling any tools, think through your approach inside <scratch_pad> tags. " +
     "Plan step by step — this helps you make better decisions and use the fewest tool calls possible.";
+
+  if (hasMovies) {
+    prompt +=
+      "\n\n🎬 When the user asks about movies, use get_movie_info for specific movies, " +
+      "get_movie_recommendations for similar movies, and discover_movies to find by genre/rating/year. " +
+      "Results include Reddit discussions and real user recommendations when available. " +
+      "Remember their movie preferences with memory_save.";
+  }
 
   return prompt;
 }
@@ -75,6 +87,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "• Chat with me about anything\n" +
         "• Send a photo 📸 and I'll describe it\n" +
         "• Send a voice message 🎤 and I'll transcribe it\n" +
+        "• Send a PDF or text document 📄 and I'll read it\n" +
+        "• Ask for movie recommendations 🎬\n" +
         "• \`/write <topic>\` to generate a blog\n" +
         "• \`/models\` to switch AI models\n" +
         "• \`/new\` to reset conversation\n" +
@@ -101,6 +115,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "• Ask me to search the web\n" +
         "• Send a photo 📷 for analysis\n" +
         "• Send a voice note 🎤 for transcription\n" +
+        "• Send a PDF or text document 📄 for analysis\n" +
+        "• Ask for movie recommendations by genre/mood/title 🎬\n" +
         "• I remember facts about you across conversations 🧠\n" +
         "• Reply to my message in groups with @Ivy\n\n" +
         "*Models:*\n" +
@@ -292,7 +308,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       // Load memories and refresh system prompt
       const chatIdForMem = ctx.chat.id;
       const photoMemories = await loadUserMemories(env.IVY_KV, chatIdForMem);
-      const sysPrompt = getSystemPrompt(photoMemories).replace(
+      const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
+      const sysPrompt = getSystemPrompt(photoMemories, hasMovies).replace(
         "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable.",
         "Keep responses friendly and natural, and describe images in detail when shown."
       );
@@ -311,16 +328,23 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         ] as any,
       });
 
-      const result = await processAi(env, history, ctx.chat.id, ctx.session.model);
+      const result = await processAiStream(
+        env,
+        history,
+        ctx.chat.id,
+        async (partial, done) => {
+          if (partial) {
+            try {
+              await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, partial + (done ? "" : "\n..."), {
+                parse_mode: "Markdown",
+              });
+            } catch {}
+          }
+        },
+        ctx.session.model
+      );
 
       if (result.text) {
-        const parts = splitLongMessage(result.text);
-        try {
-          await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, parts[0], { parse_mode: "Markdown" });
-        } catch {
-          await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, parts[0]);
-        }
-        for (let i = 1; i < parts.length; i++) await ctx.reply(parts[i]);
         history.push({ role: "assistant", content: result.text });
       }
 
@@ -364,6 +388,74 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     }
   });
 
+  // ---------- Documents (PDF, TXT, CSV, etc.) ----------
+
+  bot.on(":document", async (ctx) => {
+    if (!env.GROQ_API_KEY) {
+      await ctx.reply("AI chat is not configured.");
+      return;
+    }
+    const docMsg = ctx.message?.document;
+    const chatId = ctx.chat?.id;
+    if (!docMsg || !chatId) return;
+
+    const fileName = docMsg.file_name || "document";
+    const mimeType = docMsg.mime_type;
+
+    if (isPdfDocument(mimeType, fileName)) {
+      const placeholder = await ctx.reply("📄 Reading PDF...");
+      try {
+        const file = await ctx.api.getFile(docMsg.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+        const resp = await fetch(fileUrl);
+        const buffer = await resp.arrayBuffer();
+        const pdfText = await extractPdfText(buffer);
+
+        if (pdfText.startsWith("This PDF appears to be a scanned document")) {
+          await ctx.api.editMessageText(chatId, placeholder.message_id, pdfText);
+          return;
+        }
+
+        await ctx.api.editMessageText(
+          chatId, placeholder.message_id,
+          `📄 Extracted text from *${fileName}* (${pdfText.length} chars)`,
+          { parse_mode: "Markdown" }
+        );
+
+        await handleChat(ctx, env, `The user uploaded a PDF file "${fileName}". Here is its content:\n\n${pdfText}`);
+      } catch (e: any) {
+        await ctx.api.editMessageText(chatId, placeholder.message_id, `Error reading PDF: ${e.message}`);
+      }
+      return;
+    }
+
+    if (isTextDocument(fileName, mimeType)) {
+      const placeholder = await ctx.reply("📄 Reading document...");
+      try {
+        const file = await ctx.api.getFile(docMsg.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+        const resp = await fetch(fileUrl);
+        const text = await resp.text();
+        const truncated = text.slice(0, 10000) + (text.length > 10000 ? "\n\n[truncated at 10,000 characters]" : "");
+
+        await ctx.api.editMessageText(
+          chatId, placeholder.message_id,
+          `📄 Read *${fileName}* (${truncated.length} chars)`,
+          { parse_mode: "Markdown" }
+        );
+
+        await handleChat(ctx, env, `The user uploaded a file "${fileName}". Here is its content:\n\n${truncated}`);
+      } catch (e: any) {
+        await ctx.api.editMessageText(chatId, placeholder.message_id, `Error reading document: ${e.message}`);
+      }
+      return;
+    }
+
+    await ctx.reply(`I can't process \`${fileName}\` yet. Supported: PDF, TXT, CSV, JSON, code files, and more text-based formats.`, {
+      parse_mode: "Markdown",
+    });
+  });
+
   bot.catch((err) => console.error("Bot error:", err.error));
 }
 
@@ -398,7 +490,8 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
 
   // Load user memories and refresh system prompt
   const memories = await loadUserMemories(env.IVY_KV, chatId);
-  const sysPrompt = getSystemPrompt(memories);
+  const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
+  const sysPrompt = getSystemPrompt(memories, hasMovies);
   const sysIdx = history.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     history[sysIdx].content = sysPrompt;
