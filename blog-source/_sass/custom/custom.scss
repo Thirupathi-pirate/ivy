@@ -21,8 +21,12 @@ body {
   border-right: 1px solid #2A2A3E;
 }
 
-#avatar {
-  display: none;
+#sidebar #avatar {
+  display: none !important;
+}
+
+#sidebar #avatar img {
+  display: none !important;
 }
 
 #sidebar .site-title a {
