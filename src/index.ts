@@ -606,7 +606,8 @@ app.all("*", async (c) => {
 
   const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
   setupBot(bot, c.env);
-  return webhookCallback(bot, "hono")(c);
+  c.executionCtx.waitUntil(webhookCallback(bot, "hono")(c).catch(() => {}));
+  return c.text("OK");
 });
 
 app.onError((err, c) => {
@@ -614,10 +615,8 @@ app.onError((err, c) => {
   return c.text("OK", 200);
 });
 
-export default app;
-
 // ---------- Cron: Fire due reminders ----------
-export async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
   const list = await env.IVY_KV.list({ prefix: "reminder:", limit: 100 });
   const now = Date.now();
   for (const key of list.keys) {
@@ -645,3 +644,5 @@ export async function scheduled(_event: ScheduledEvent, env: Env, _ctx: Executio
     }
   }
 }
+
+export default { fetch: app.fetch, scheduled };
