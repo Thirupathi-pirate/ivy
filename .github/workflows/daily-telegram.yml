@@ -96,7 +96,8 @@ jobs:
           echo "   — $AUTHOR" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Send to Telegram
+      - name: Send success notification
+        if: success()
         uses: appleboy/telegram-action@v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -109,3 +110,19 @@ jobs:
             Read: ${{ steps.url.outputs.url }}
 
             ✨ ${{ steps.meta.outputs.thought }}
+
+      - name: Send failure notification
+        if: failure()
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ❌ Blog Writer Failed
+
+            Workflow: ${{ github.workflow }}
+            Trigger: ${{ github.event_name }}
+            Topic: ${{ inputs.topic || 'The Future of AI Agents' }}
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Check the logs above for details.
