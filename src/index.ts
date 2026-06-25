@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, webhookCallback } from "grammy";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid } from "./ai";
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -43,9 +43,9 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
     "Plan step by step — this helps you make better decisions and use the fewest tool calls possible." +
     "\n\n📖 When the user asks for information (movies, topics, explanations), provide thorough, detailed responses. " +
     "Don't cut your answers short — include full descriptions, context, and interesting details." +
-    "\n\n📐 You can render LaTeX math formulas (use render_latex) and Mermaid diagrams (use render_mermaid) into images. " +
-    "When the user writes a formula (with $$ or \\(\\) or just plain) or a Mermaid code block (\\`\\`\\`mermaid), call the appropriate tool to render it as an image. " +
-    "Do NOT say you can't send images — you have these tools and they work.";
+    "\n\n📐 You have render_latex and render_mermaid tools that render math formulas and diagrams as images sent directly to the user. " +
+    "IMPORTANT: When the user writes a LaTeX formula (with $$ or \\[\\]) or a Mermaid code block (\\`\\`\\`mermaid), you MUST call the corresponding tool to render it. " +
+    "Do NOT say you can't send images — these tools exist specifically for that purpose.";
 
   if (hasMovies) {
     prompt +=
@@ -518,6 +518,24 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   }
 
   history.push({ role: "user", content: text });
+
+  // Auto-render Mermaid code blocks and LaTeX formulas in user messages
+  (async () => {
+    // Mermaid: ```mermaid ... ```
+    const mermaidMatch = text.match(/```mermaid\n?([\s\S]*?)```/);
+    if (mermaidMatch) {
+      try {
+        await renderMermaid(env, chatId, mermaidMatch[1].trim());
+      } catch {}
+    }
+    // LaTeX: $$ ... $$ or \[ ... \]
+    const latexMatch = text.match(/\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]/);
+    if (latexMatch) {
+      try {
+        await renderLatex(env, chatId, (latexMatch[1] || latexMatch[2]).trim());
+      } catch {}
+    }
+  })();
 
   let result: { text: string; modelUsed: string };
 

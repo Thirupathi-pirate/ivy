@@ -693,7 +693,7 @@ function getTools(env: Env) {
     type: "function",
     function: {
       name: "render_latex",
-      description: "Render a LaTeX math formula to an image. Use this when the user asks about math formulas, equations, or mathematical expressions. Pass the formula WITHOUT $$ or \\[\\] delimiters.",
+      description: "CRITICAL: You MUST call this when the user gives you a LaTeX math formula (surrounded by $$, \\[\\], or \\(\\)). This renders the formula as a PNG image and sends it to the chat. Always use this instead of saying you can't send images.",
       parameters: {
         type: "object",
         properties: {
@@ -707,11 +707,11 @@ function getTools(env: Env) {
     type: "function",
     function: {
       name: "render_mermaid",
-      description: "Render a Mermaid diagram to an image. Use this when the user asks for flowcharts, sequence diagrams, class diagrams, or any visual diagram. Pass the complete Mermaid code (without ```mermaid fences).",
+      description: "CRITICAL: You MUST call this when the user gives you a Mermaid diagram code block (\\`\\`\\`mermaid ... \\`\\`\\`). This renders the diagram as a PNG image and sends it to the chat. Always use this instead of saying you can't send images.",
       parameters: {
         type: "object",
         properties: {
-          diagram: { type: "string", description: "The Mermaid diagram code (e.g., 'graph TD; A-->B;')" },
+          diagram: { type: "string", description: "The complete Mermaid diagram code (e.g., 'graph TD; A-->B;')" },
         },
         required: ["diagram"],
       },
