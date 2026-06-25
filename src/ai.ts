@@ -1077,38 +1077,18 @@ export async function renderLatex(env: Env, chatId: number, formula: string): Pr
       const form = new FormData();
       form.append("chat_id", String(chatId));
       form.append("photo", blob, "latex.png");
-      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+      const sendResp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+      if (!sendResp.ok) console.log("sendPhoto failed:", await sendResp.text());
     }
-  } catch {}
+  } catch (e) { console.log("sendPhoto error:", e); }
   return "Rendered LaTeX formula as image above.";
 }
 
 // ===================== Mermaid Renderer =====================
 
-async function deflateBase64Url(data: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(data);
-  const cs = new CompressionStream("deflate");
-  const writer = cs.writable.getWriter();
-  writer.write(bytes);
-  writer.close();
-  const reader = cs.readable.getReader();
-  const chunks: Uint8Array[] = [];
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-  }
-  const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-  const out = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const c of chunks) { out.set(c, offset); offset += c.length; }
-  return btoa(String.fromCharCode(...out)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
 export async function renderMermaid(env: Env, chatId: number, diagram: string): Promise<string> {
-  const encoded = await deflateBase64Url(diagram);
-  const renderUrl = `https://kroki.io/mermaid/png/${encoded}`;
+  const encoded = btoa(diagram).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const renderUrl = `https://mermaid.ink/img/${encoded}`;
   const resp = await fetch(renderUrl);
   if (!resp.ok) return "Mermaid render failed.";
   try {
@@ -1116,7 +1096,8 @@ export async function renderMermaid(env: Env, chatId: number, diagram: string): 
     const form = new FormData();
     form.append("chat_id", String(chatId));
     form.append("photo", blob, "mermaid.png");
-    await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
-  } catch {}
+    const sendResp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: "POST", body: form });
+    if (!sendResp.ok) console.log("sendPhoto failed:", await sendResp.text());
+  } catch (e) { console.log("sendPhoto error:", e); }
   return "Rendered Mermaid diagram as image above.";
 }
