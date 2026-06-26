@@ -104,16 +104,23 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
     return "\n".join(lines)
 
 
-def insert_inline_image(content: str, img: dict | None) -> str:
-    """Insert an inline image after the intro, before the first section heading."""
+def insert_inline_image(content: str, img: dict | None, at_top: bool = False) -> str:
+    """Insert a post-hero image with overlay credit.
+    
+    at_top=True  → inserts at the very beginning (for cover)
+    at_top=False → inserts after the intro, before the first section heading (for inline)
+    """
     if not img:
         return content
-    idx = content.find("\n## ")
-    if idx == -1:
-        return content
-    insert_pos = content.rfind("\n\n", 0, idx)
-    if insert_pos == -1:
-        insert_pos = idx
+    if at_top:
+        insert_pos = 0
+    else:
+        idx = content.find("\n## ")
+        if idx == -1:
+            idx = content.find("\n")
+        insert_pos = content.rfind("\n\n", 0, idx)
+        if insert_pos == -1:
+            insert_pos = idx
     image_block = (
         f'\n\n<div class="post-hero">\n'
         f'  <img src="{img["path"]}&w=780&h=440&fit=crop"'
@@ -126,19 +133,6 @@ def insert_inline_image(content: str, img: dict | None) -> str:
     )
     return content[:insert_pos] + image_block + content[insert_pos:]
 
-
-def build_attribution(images: list) -> str:
-    if not images:
-        return ""
-    parts = ["\n\n---\n"]
-    for i, img in enumerate(images):
-        parts.append(
-            f"\n{i + 1}. 📸 {img['photographer']} —"
-            f" [{img['photographer']}]({img['photographer_url']})"
-            f" on [Unsplash]({img['unsplash_url']})"
-        )
-    parts.append("\n")
-    return "".join(parts)
 
 
 def main():
@@ -162,9 +156,12 @@ def main():
 
     frontmatter = build_frontmatter(title, topic, desc, cover, mermaid)
     body = re.sub(r"^# .+\n?", "", content, count=1).strip()
-    body = insert_inline_image(body, inline_img)
-    attribution = build_attribution(images)
-    post_content = frontmatter + "\n\n" + body + attribution
+    # Insert cover at top, inline after intro — both get overlay credits
+    if cover:
+        body = insert_inline_image(body, cover, at_top=True)
+    if inline_img:
+        body = insert_inline_image(body, inline_img, at_top=False)
+    post_content = frontmatter + "\n\n" + body
 
     post_filename = f"{today}-{slug}.md"
     post_path = POSTS_DIR / post_filename

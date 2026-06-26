@@ -9,7 +9,7 @@ html {
 }
 
 body {
-  font-family: "Spectral", Georgia, "Times New Roman", serif;
+  font-family: "Google Sans", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.8;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -53,7 +53,7 @@ body {
 }
 
 #sidebar .site-title a {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Raleway", sans-serif;
   font-size: 1.6rem;
   font-weight: 700;
   color: #FFFFFF;
@@ -119,7 +119,7 @@ input:focus-visible {
 }
 
 #topbar .site-title a {
-  font-family: "Playfair Display", Georgia, serif;
+  font-family: "Raleway", sans-serif;
   color: #FFFFFF;
   background: linear-gradient(135deg, #FFFFFF 50%, #BB86FC);
   -webkit-background-clip: text;
@@ -147,7 +147,7 @@ input:focus-visible {
 
 /* ── Post title ── */
 h1.post-title {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Raleway", sans-serif;
   font-size: 2.5rem;
   font-weight: 800;
   line-height: 1.15;
@@ -158,7 +158,7 @@ h1.post-title {
 
 /* ── Post meta ── */
 .post-meta {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 0.85rem;
   color: #9A9AB0;
   margin-bottom: 2rem;
@@ -169,7 +169,7 @@ h1.post-title {
   background: transparent;
   padding: 0;
   margin-bottom: 1rem;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
 }
 
@@ -198,7 +198,7 @@ h1.post-title {
 }
 
 .related-posts h3 {
-  font-family: Inter, sans-serif;
+  font-family: "Raleway", sans-serif;
   font-size: 1.1rem;
   font-weight: 700;
   color: #FFFFFF;
@@ -218,7 +218,7 @@ h1.post-title {
 .related-posts li a {
   color: #C4C4D4;
   text-decoration: none;
-  font-family: Spectral, Georgia, serif;
+  font-family: "Google Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: 1rem;
   line-height: 1.5;
   transition: color 0.2s;
@@ -250,7 +250,7 @@ h1.post-title {
   right: 0;
   background: rgba(18, 18, 30, 0.8);
   color: #9A9AB0;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.75rem;
   padding: 4px 12px;
   border-top-left-radius: 8px;
@@ -270,7 +270,7 @@ h1.post-title {
 }
 
 #post-wrapper .post-content h2 {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Raleway", sans-serif;
   font-size: 1.75rem;
   font-weight: 700;
   color: #FFFFFF;
@@ -286,7 +286,7 @@ h1.post-title {
 }
 
 #post-wrapper .post-content h3 {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Raleway", sans-serif;
   font-size: 1.35rem;
   font-weight: 600;
   color: #D0D0E0;
@@ -295,7 +295,7 @@ h1.post-title {
 }
 
 #post-wrapper .post-content h4 {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Raleway", sans-serif;
   font-size: 1.1rem;
   font-weight: 600;
   color: #C4C4D4;
@@ -440,7 +440,7 @@ h1.post-title {
 #post-wrapper .post-content th {
   background: #1A1A2E;
   color: #FFFFFF;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-weight: 600;
   padding: 0.75rem 1rem;
   text-align: left;
@@ -474,7 +474,7 @@ h1.post-title {
 }
 
 .mermaid .label {
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Google Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
 .mermaid .edgeLabel {
@@ -511,6 +511,19 @@ h1.post-title {
   stroke-width: 1px;
 }
 
+/* Force readable text in nodes regardless of inline fill colors */
+.mermaid .label text,
+.mermaid .label span {
+  fill: #E1E1EB !important;
+  color: #E1E1EB !important;
+}
+
+/* Hide Chirpy's built-in featured image — we render it in body with overlay credit */
+#post-image,
+.post-image {
+  display: none;
+}
+
 /* ── Hide CC license ── */
 .license-wrapper {
   display: none;
@@ -532,7 +545,7 @@ h1.post-title {
 
 /* ── Unsplash attribution ── */
 .unsplash-attribution {
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
   color: #9A9AB0;
   margin-top: 2rem;
@@ -591,7 +604,7 @@ h1.post-title {
 
 .post-card .card-title a {
   color: #FFFFFF;
-  font-family: Inter, sans-serif;
+  font-family: "Raleway", sans-serif;
   font-weight: 700;
   font-size: 1.2rem;
   line-height: 1.4;
@@ -599,7 +612,7 @@ h1.post-title {
 
 .post-card .card-text {
   color: #9A9AB0;
-  font-family: Spectral, Georgia, serif;
+  font-family: "Google Sans", "Helvetica Neue", Arial, sans-serif;
   font-size: 0.95rem;
   line-height: 1.6;
 }
@@ -610,7 +623,7 @@ h1.post-title {
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
   color: #9A9AB0;
   text-transform: uppercase;
@@ -619,7 +632,7 @@ h1.post-title {
 
 /* ── TOC panel ── */
 #panel-wrapper {
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
 }
 
 #panel-wrapper .panel-heading {
@@ -663,7 +676,7 @@ h1.post-title {
 
 #search-hints {
   color: #9A9AB0;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
 }
 
@@ -698,7 +711,7 @@ a.tag:hover {
   border: 1px solid rgba(187, 134, 252, 0.2) !important;
   border-radius: 6px;
   padding: 2px 10px;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
   transition: all 0.2s;
 }
@@ -735,8 +748,12 @@ a.tag:hover {
 /* ── Footer ── */
 footer {
   color: #9A9AB0;
-  font-family: Inter, sans-serif;
+  font-family: "Google Sans", sans-serif;
   font-size: 0.85rem;
+  text-align: center;
+  padding: 1rem 0;
+  border-top: 1px solid #2A2A3E;
+  margin-top: 3rem;
 }
 
 footer a {
