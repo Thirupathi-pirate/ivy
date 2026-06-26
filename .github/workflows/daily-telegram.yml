@@ -52,6 +52,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
           git add blog-source/_posts/
           git commit -m "Add post: $(ls blog-source/_posts/ | tail -1) [skip ci]" || echo "No new post to commit"
           git push
