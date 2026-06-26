@@ -146,7 +146,7 @@ def main():
 
     images = fetch_unsplash_images(topic)
     cover = images[0] if len(images) > 0 else None
-    inline_img = images[1] if len(images) > 1 else None
+    inline_img = images[1] if len(images) > 1 and images[1]["path"] != images[0]["path"] else None
 
     mermaid = has_mermaid(content)
 
