@@ -104,23 +104,19 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
     return "\n".join(lines)
 
 
-def insert_inline_image(content: str, img: dict | None, at_top: bool = False) -> str:
-    """Insert a post-hero image with overlay credit.
-    
-    at_top=True  → inserts at the very beginning (for cover)
-    at_top=False → inserts after the intro, before the first section heading (for inline)
-    """
+def insert_inline_image(content: str, img: dict | None) -> str:
+    """Insert a post-hero image with overlay credit inside the first content section."""
     if not img:
         return content
-    if at_top:
-        insert_pos = 0
-    else:
-        idx = content.find("\n## ")
-        if idx == -1:
-            idx = content.find("\n")
-        insert_pos = content.rfind("\n\n", 0, idx)
-        if insert_pos == -1:
+    idx = content.find("\n## ")
+    if idx != -1:
+        para = content.find("\n\n", idx)
+        if para != -1:
+            insert_pos = para
+        else:
             insert_pos = idx
+    else:
+        insert_pos = content.find("\n\n") if content.find("\n\n") != -1 else 0
     image_block = (
         f'\n\n<div class="post-hero">\n'
         f'  <img src="{img["path"]}&w=780&h=440&fit=crop"'
@@ -156,11 +152,9 @@ def main():
 
     frontmatter = build_frontmatter(title, topic, desc, cover, mermaid)
     body = re.sub(r"^# .+\n?", "", content, count=1).strip()
-    # Insert cover at top, inline after intro — both get overlay credits
-    if cover:
-        body = insert_inline_image(body, cover, at_top=True)
+    # Insert inline image inside the first content section
     if inline_img:
-        body = insert_inline_image(body, inline_img, at_top=False)
+        body = insert_inline_image(body, inline_img)
     post_content = frontmatter + "\n\n" + body
 
     post_filename = f"{today}-{slug}.md"

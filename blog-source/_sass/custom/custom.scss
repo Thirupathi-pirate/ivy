@@ -518,11 +518,6 @@ h1.post-title {
   color: #E1E1EB !important;
 }
 
-/* Hide Chirpy's built-in featured image — we render it in body with overlay credit */
-#post-image,
-.post-image {
-  display: none;
-}
 
 /* ── Hide CC license ── */
 .license-wrapper {
@@ -745,20 +740,6 @@ a.tag:hover {
   color: #FFFFFF;
 }
 
-/* ── Footer ── */
-footer {
-  color: #9A9AB0;
-  font-family: "Google Sans", sans-serif;
-  font-size: 0.85rem;
-  text-align: center;
-  padding: 1rem 0;
-  border-top: 1px solid #2A2A3E;
-  margin-top: 3rem;
-}
-
-footer a {
-  color: #BB86FC;
-}
 
 /* ── Reading progress bar ── */
 #progress-bar {
@@ -829,5 +810,314 @@ footer a {
 
   .post-card .card-body {
     padding: 1rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Light Theme — Cream Background
+   bg: #F8F4EA  accent: #7C4DFF  text: #2C2C3A
+   ═══════════════════════════════════════════════ */
+[data-mode="light"] {
+  body {
+    background: #F8F4EA;
+    color: #2C2C3A;
+  }
+
+  #sidebar {
+    background: #F0EBDC;
+    border-right-color: #E0D8C8;
+  }
+
+  #sidebar .site-title a {
+    background: linear-gradient(135deg, #2C2C3A 50%, #7C4DFF);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  #sidebar .site-subtitle {
+    color: #6A6A7E;
+  }
+
+  #sidebar a {
+    color: #4A4A5A;
+  }
+
+  #sidebar .nav-item.active a {
+    color: #7C4DFF;
+    border-right-color: #7C4DFF;
+  }
+
+  #topbar {
+    background: rgba(240, 235, 220, 0.95);
+    border-bottom-color: #E0D8C8;
+  }
+
+  #topbar .site-title a {
+    background: linear-gradient(135deg, #2C2C3A 50%, #7C4DFF);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
+  #topbar #sidebar-trigger,
+  #topbar #search-trigger {
+    color: #4A4A5A;
+  }
+
+  h1.post-title {
+    color: #1C1C2A;
+  }
+
+  .post-meta {
+    color: #6A6A7E;
+  }
+
+  .breadcrumb-item + .breadcrumb-item::before {
+    color: #6A6A7E;
+  }
+
+  .breadcrumb-item a {
+    color: #7C4DFF;
+  }
+
+  .breadcrumb-item.active {
+    color: #6A6A7E;
+  }
+
+  .related-posts {
+    border-top-color: #E0D8C8;
+  }
+
+  .related-posts h3 {
+    color: #1C1C2A;
+  }
+
+  .related-posts li a {
+    color: #4A4A5A;
+  }
+
+  .related-posts li a:hover {
+    color: #7C4DFF;
+  }
+
+  .post-hero {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  .post-hero-credit {
+    background: rgba(248, 244, 234, 0.9);
+    color: #6A6A7E;
+  }
+
+  .post-hero-credit a {
+    color: #7C4DFF;
+  }
+
+  #post-wrapper .post-content p {
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content h2 {
+    color: #1C1C2A;
+    border-bottom-color: #E0D8C8;
+  }
+
+  #post-wrapper .post-content h3 {
+    color: #3A3A4A;
+  }
+
+  #post-wrapper .post-content h4 {
+    color: #4A4A5A;
+  }
+
+  #post-wrapper .post-content blockquote {
+    background: rgba(124, 77, 255, 0.05);
+    color: #4A4A5A;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  #post-wrapper .post-content .prompt-tip {
+    background: rgba(124, 77, 255, 0.06);
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content .prompt-info {
+    background: rgba(100, 181, 246, 0.06);
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content .prompt-warning {
+    background: rgba(255, 183, 77, 0.06);
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content .prompt-danger {
+    background: rgba(229, 115, 115, 0.06);
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content a {
+    color: #7C4DFF;
+    text-decoration-color: rgba(124, 77, 255, 0.3);
+  }
+
+  #post-wrapper .post-content a:hover {
+    text-decoration-color: #7C4DFF;
+  }
+
+  #post-wrapper .post-content ul,
+  #post-wrapper .post-content ol {
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content code {
+    background: #EDE8DA;
+    color: #7C4DFF;
+    border-color: #E0D8C8;
+  }
+
+  #post-wrapper .post-content pre {
+    background: #F0EBDC;
+    border-color: #E0D8C8;
+  }
+
+  #post-wrapper .post-content pre code {
+    color: #2C2C3A;
+  }
+
+  #post-wrapper .post-content hr {
+    background: linear-gradient(90deg, #E0D8C8, #7C4DFF, #E0D8C8);
+  }
+
+  #post-wrapper .post-content img {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  }
+
+  #post-wrapper .post-content img:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  }
+
+  #post-wrapper .post-content th {
+    background: #F0EBDC;
+    color: #1C1C2A;
+    border-color: #E0D8C8;
+  }
+
+  #post-wrapper .post-content td {
+    color: #2C2C3A;
+    border-color: #E0D8C8;
+  }
+
+  #post-wrapper .post-content tr:nth-child(even) {
+    background: rgba(240, 235, 220, 0.5);
+  }
+
+  .mermaid {
+    background: #F0EBDC;
+    border-color: #E0D8C8;
+  }
+
+  .mermaid .edgeLabel {
+    background: #F0EBDC !important;
+    border-color: #E0D8C8;
+  }
+
+  .mermaid .cluster rect {
+    fill: #F8F4EA;
+    stroke: #E0D8C8;
+  }
+
+  .mermaid .label text,
+  .mermaid .label span {
+    fill: #2C2C3A !important;
+    color: #2C2C3A !important;
+  }
+
+  .post-tailmark {
+    border-top-color: #E0D8C8;
+  }
+
+  .post-card .card-body {
+    background: #FFFFFF;
+    border-color: #E0D8C8;
+  }
+
+  .post-card:hover .card-body {
+    background: #FFFFFF;
+    border-color: #7C4DFF;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.08);
+  }
+
+  .post-card .card-title a {
+    color: #1C1C2A;
+  }
+
+  .post-card .card-text {
+    color: #6A6A7E;
+  }
+
+  .post-card .post-meta {
+    color: #6A6A7E;
+  }
+
+  #panel-wrapper .panel-heading {
+    color: #6A6A7E;
+  }
+
+  #panel-wrapper a {
+    color: #6A6A7E;
+  }
+
+  #panel-wrapper a:hover,
+  #panel-wrapper a.active {
+    color: #7C4DFF;
+  }
+
+  #search-input {
+    background: #FFFFFF;
+    border-color: #E0D8C8;
+    color: #2C2C3A;
+  }
+
+  .pagination a.page-link {
+    background: #FFFFFF;
+    border-color: #E0D8C8;
+    color: #4A4A5A;
+  }
+
+  .pagination a.page-link:hover {
+    background: #F0EBDC;
+    border-color: #7C4DFF;
+    color: #7C4DFF;
+  }
+
+  .pagination .page-item.active .page-link {
+    background: #7C4DFF;
+    border-color: #7C4DFF;
+    color: #FFFFFF;
+  }
+
+  .tag-badge,
+  a.tag:hover {
+    background: rgba(124, 77, 255, 0.1) !important;
+    color: #7C4DFF !important;
+    border-color: rgba(124, 77, 255, 0.2) !important;
+  }
+
+  .tag-badge:hover,
+  a.tag:hover {
+    background: rgba(124, 77, 255, 0.18) !important;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #F8F4EA;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #D0C8B8;
+  }
+
+  ::selection {
+    background: rgba(124, 77, 255, 0.2);
+    color: #1C1C2A;
   }
 }
