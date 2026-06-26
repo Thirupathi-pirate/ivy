@@ -66,4 +66,3 @@ editing_task:
     clean and professional while keeping the natural human tone and
     all visual elements (emoji, mermaid, lists, blockquotes, links).
   agent: editor
-  output_file: output/blog_post.md
