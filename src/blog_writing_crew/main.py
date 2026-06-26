@@ -12,17 +12,27 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 def run():
     """
-    Run the crew.
+    Run the crew with retry on Gemini 5xx errors.
     """
     inputs = {
         'topic': os.getenv("TOPIC", "The Future of AI Agents"),
         'current_year': str(datetime.now().year)
     }
 
-    try:
-        BlogWritingCrew().crew().kickoff(inputs=inputs)
-    except Exception as e:
-        raise Exception(f"An error occurred while running the crew: {e}")
+    import time
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            BlogWritingCrew().crew().kickoff(inputs=inputs)
+            return
+        except Exception as e:
+            err_str = str(e)
+            if attempt < max_retries and ("500" in err_str or "INTERNAL" in err_str or "503" in err_str):
+                wait = 2 ** attempt * 30
+                print(f"Gemini API error (attempt {attempt}/{max_retries}), retrying in {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                raise Exception(f"An error occurred while running the crew: {e}")
 
 
 def train():
