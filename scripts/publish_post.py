@@ -72,17 +72,21 @@ def fetch_unsplash_images(topic: str, count: int = 2) -> list:
         return []
 
 
+def yaml_escape(s: str) -> str:
+    """Escape double quotes in a YAML double-quoted string."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
 def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool) -> str:
     now = datetime.now()
     date = now.strftime("%Y-%m-%d %H:%M:%S %z")
-    lines = ["---", "layout: post", f'title: "{title}"', f"date: {date}", "toc: true"]
+    lines = ["---", "layout: post", f'title: "{yaml_escape(title)}"', f"date: {date}", "toc: true"]
     if mermaid:
         lines.append("mermaid: true")
     if unsplash:
         lines.extend([
             "image:",
             f'  path: "{unsplash["path"]}&w=1200&h=630&fit=crop"',
-            f'  alt: "{unsplash["alt"]}"',
+            f'  alt: "{yaml_escape(unsplash["alt"])}"',
             "  photographer: " + unsplash['photographer'],
             "  photographer_url: " + unsplash['photographer_url'],
             "  unsplash_url: " + unsplash['unsplash_url'],

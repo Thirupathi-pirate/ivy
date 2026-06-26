@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "The Evolution of "Hello World": Coding at the Start of 2026"
+title: "The Evolution of 'Hello World': Coding at the Start of 2026"
 date: 2026-06-25 16:57:10 
 toc: true
 mermaid: true
