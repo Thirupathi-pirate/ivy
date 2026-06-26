@@ -46,10 +46,6 @@ analytics:
 
 plugins:
   - jekyll-sitemap
-  - jekyll-last-modified-at
-
-last-modified-at:
-  date-format: "%Y-%m-%d"
 
 pwa:
   enabled: true
