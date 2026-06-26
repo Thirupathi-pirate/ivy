@@ -1,5 +1,3 @@
-import os
-from pathlib import Path
 from crewai import Agent, Crew, LLM, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from blog_writing_crew.tools.custom_tool import NewsSearchTool
@@ -63,7 +61,6 @@ class BlogWritingCrew():
         return Task(
             config=self.tasks_config["editing_task"],  # type: ignore[index]
             context=[self.humanising_task()],
-            output_file=str(Path(__file__).resolve().parent.parent.parent / "output" / "blog_post.md"),
         )
 
     @crew

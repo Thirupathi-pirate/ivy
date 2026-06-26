@@ -4,6 +4,7 @@ import sys
 import warnings
 
 from datetime import datetime
+from pathlib import Path
 
 from blog_writing_crew.crew import BlogWritingCrew
 
@@ -21,10 +22,11 @@ def run():
 
     import time
     max_retries = 3
+    result = None
     for attempt in range(1, max_retries + 1):
         try:
-            BlogWritingCrew().crew().kickoff(inputs=inputs)
-            return
+            result = BlogWritingCrew().crew().kickoff(inputs=inputs)
+            break
         except Exception as e:
             err_str = str(e)
             if attempt < max_retries and ("500" in err_str or "INTERNAL" in err_str or "503" in err_str):
@@ -33,6 +35,11 @@ def run():
                 time.sleep(wait)
             else:
                 raise Exception(f"An error occurred while running the crew: {e}")
+
+    raw = result.raw if hasattr(result, "raw") else str(result)
+    output_dir = Path(__file__).resolve().parent.parent.parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "blog_post.md").write_text(raw, encoding="utf-8")
 
 
 def train():
