@@ -3,6 +3,10 @@ import { Bot, Context, InlineKeyboard, session, webhookCallback } from "grammy";
 import { KvAdapter } from "@grammyjs/storage-cloudflare";
 import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid } from "./ai";
 
+// In-memory dedup for webhook update IDs (replaces KV to save quota)
+const recentUpdates = new Map<number, number>();
+const DEDUP_TTL_MS = 10_000;
+
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GROQ_API_KEY: string;
@@ -24,7 +28,7 @@ interface SessionData {
 
 type MyContext = Context & { session: SessionData };
 
-const MAX_HISTORY = 20;
+const MAX_HISTORY = 10;
 
 function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
   let prompt =
@@ -609,7 +613,7 @@ app.all("*", async (c) => {
     return c.text("Bot running. Send POST for webhook.");
   }
 
-  // Dedup: skip duplicate Telegram webhook retries
+  // Dedup: skip duplicate Telegram webhook retries (in-memory to save KV quota)
   const raw = await c.req.raw.clone().text();
   let updateId: number | null = null;
   try {
@@ -617,12 +621,16 @@ app.all("*", async (c) => {
     updateId = parsed?.update_id ?? null;
   } catch {}
   if (updateId !== null) {
-    const dedupKey = `dedup:${updateId}`;
-    const seen = await c.env.IVY_KV.get(dedupKey);
-    if (seen) {
+    if (recentUpdates.has(updateId)) {
       return c.text("OK", 200);
     }
-    await c.env.IVY_KV.put(dedupKey, "1", { expirationTtl: 300 });
+    recentUpdates.set(updateId, Date.now());
+    if (recentUpdates.size > 100) {
+      const now = Date.now();
+      for (const [id, ts] of recentUpdates) {
+        if (now - ts > DEDUP_TTL_MS) recentUpdates.delete(id);
+      }
+    }
   }
 
   const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
