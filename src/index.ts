@@ -353,8 +353,11 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         ctx.chat.id,
         async (partial, done) => {
           if (partial) {
+            const sanitized = sanitizeTelegramMarkdown(partial);
+            const text = sanitized + (done ? "" : "\n...");
+            if (text.length > 4000) return;
             try {
-              await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, partial + (done ? "" : "\n..."), {
+              await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, text, {
                 parse_mode: "Markdown",
               });
             } catch {}
@@ -541,7 +544,9 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         chatId,
         async (partial, done) => {
           if (partial) {
-            const text = partial + (done ? "" : "\n...");
+            const sanitized = sanitizeTelegramMarkdown(partial);
+            const text = sanitized + (done ? "" : "\n...");
+            if (text.length > 4000) return;
             try {
               await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text, { parse_mode: "Markdown" });
             } catch {
