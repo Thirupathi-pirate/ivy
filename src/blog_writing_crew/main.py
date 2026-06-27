@@ -29,7 +29,7 @@ def run():
             break
         except Exception as e:
             err_str = str(e)
-            if attempt < max_retries and ("500" in err_str or "INTERNAL" in err_str or "503" in err_str):
+            if attempt < max_retries and ("500" in err_str or "503" in err_str or "INTERNAL" in err_str or "timeout" in err_str.lower() or "connection" in err_str.lower()):
                 wait = 2 ** attempt * 30
                 print(f"Gemini API error (attempt {attempt}/{max_retries}), retrying in {wait}s: {e}")
                 time.sleep(wait)
@@ -47,12 +47,13 @@ def train():
     Train the crew for a given number of iterations.
     """
     inputs = {
-        "topic": "AI LLMs",
+        "topic": os.getenv("TOPIC", "The Future of AI Agents"),
         'current_year': str(datetime.now().year)
     }
+    if len(sys.argv) < 3:
+        raise Exception("Usage: crewai train <n_iterations> <filename>")
     try:
         BlogWritingCrew().crew().train(n_iterations=int(sys.argv[1]), filename=sys.argv[2], inputs=inputs)
-
     except Exception as e:
         raise Exception(f"An error occurred while training the crew: {e}")
 
@@ -60,9 +61,10 @@ def replay():
     """
     Replay the crew execution from a specific task.
     """
+    if len(sys.argv) < 2:
+        raise Exception("Usage: crewai replay <task_id>")
     try:
         BlogWritingCrew().crew().replay(task_id=sys.argv[1])
-
     except Exception as e:
         raise Exception(f"An error occurred while replaying the crew: {e}")
 
@@ -71,13 +73,14 @@ def test():
     Test the crew execution and returns the results.
     """
     inputs = {
-        "topic": "AI LLMs",
+        "topic": os.getenv("TOPIC", "The Future of AI Agents"),
         "current_year": str(datetime.now().year)
     }
 
+    if len(sys.argv) < 3:
+        raise Exception("Usage: crewai test <n_iterations> <eval_llm>")
     try:
         BlogWritingCrew().crew().test(n_iterations=int(sys.argv[1]), eval_llm=sys.argv[2], inputs=inputs)
-
     except Exception as e:
         raise Exception(f"An error occurred while testing the crew: {e}")
 
@@ -97,8 +100,8 @@ def run_with_trigger():
 
     inputs = {
         "crewai_trigger_payload": trigger_payload,
-        "topic": "",
-        "current_year": ""
+        "topic": trigger_payload.get("topic", ""),
+        "current_year": str(datetime.now().year)
     }
 
     try:

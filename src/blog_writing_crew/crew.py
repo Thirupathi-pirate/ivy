@@ -2,8 +2,12 @@ from crewai import Agent, Crew, LLM, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from blog_writing_crew.tools.custom_tool import NewsSearchTool
 
+try:
+    from crewai.agents.agent_builder.base_agent import BaseAgent
+except ImportError:
+    from crewai import Agent as BaseAgent  # type: ignore[assignment]
+
 from typing import List
-from crewai.agents.agent_builder.base_agent import BaseAgent
 
 
 @CrewBase
@@ -16,7 +20,7 @@ class BlogWritingCrew():
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    _llm = LLM(model="google/gemma-4-31b-it", max_tokens=8192)
+    _llm = LLM(model="google/gemma-4-31b-it", max_tokens=16384)
 
     @agent
     def writer(self) -> Agent:

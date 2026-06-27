@@ -31,6 +31,19 @@ interface GroqToolCall {
 
 export type StreamCallback = (text: string, done: boolean) => Promise<void>;
 
+/** List all KV keys with a prefix, handling pagination. */
+async function kvListAll(kv: KVNamespace, prefix: string): Promise<Array<{ name: string }>> {
+  const keys: Array<{ name: string }> = [];
+  let cursor: string | undefined;
+  while (true) {
+    const list = await kv.list({ prefix, cursor });
+    keys.push(...list.keys);
+    if (list.list_complete) break;
+    cursor = (list as any).cursor;
+  }
+  return keys;
+}
+
 // ===================== Long-Term Memory =====================
 
 export async function loadUserMemories(kv: KVNamespace, chatId: number): Promise<string> {
@@ -46,8 +59,8 @@ export async function loadUserMemories(kv: KVNamespace, chatId: number): Promise
 }
 
 export async function clearUserMemories(kv: KVNamespace, chatId: number): Promise<void> {
-  const list = await kv.list({ prefix: `memory:${chatId}:` });
-  for (const k of list.keys) {
+  const keys = await kvListAll(kv, `memory:${chatId}:`);
+  for (const k of keys) {
     await kv.delete(k.name);
   }
 }
@@ -456,9 +469,11 @@ async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, 
   let timestamp: number;
   if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
     const [h, m] = timeStr.split(":").map(Number);
-    const t = new Date();
+    if (h > 23 || m > 59) return null;
+    const now = new Date();
+    const t = new Date(now);
     t.setUTCHours(h, m, 0, 0);
-    if (t <= new Date()) t.setUTCDate(t.getUTCDate() + 1);
+    if (t <= now) t.setUTCDate(t.getUTCDate() + 1);
     timestamp = t.getTime();
   } else {
     timestamp = new Date(timeStr).getTime();
@@ -470,9 +485,9 @@ async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, 
 }
 
 async function listReminders(kv: KVNamespace, chatId: number) {
-  const list = await kv.list({ prefix: "reminder:" });
+  const keys = await kvListAll(kv, "reminder:");
   const items: Array<{ id: string; timestamp: number; message: string }> = [];
-  for (const key of list.keys) {
+  for (const key of keys) {
     const val: any = await kv.get(key.name, "json");
     if (val?.chat_id === chatId) {
       const parts = key.name.split(":");
@@ -483,8 +498,8 @@ async function listReminders(kv: KVNamespace, chatId: number) {
 }
 
 async function cancelReminder(kv: KVNamespace, chatId: number, reminderId: string) {
-  const list = await kv.list({ prefix: "reminder:" });
-  for (const key of list.keys) {
+  const keys = await kvListAll(kv, "reminder:");
+  for (const key of keys) {
     if (key.name.endsWith(`:${reminderId}`)) {
       const val: any = await kv.get(key.name, "json");
       if (val?.chat_id === chatId) {
@@ -848,18 +863,21 @@ async function revealText(onStream: StreamCallback | undefined, text: string) {
   if (!onStream || !text) return;
   const step = 25;
   let pos = Math.min(60, text.length);
+  let lastPartial = "";
   while (pos < text.length) {
-    await onStream(text.slice(0, pos), false);
+    lastPartial = text.slice(0, pos);
+    await onStream(lastPartial, false);
     pos = Math.min(pos + step, text.length);
   }
-  await onStream(text, true);
+  if (lastPartial !== text) {
+    await onStream(text, true);
+  }
 }
 
 // ===================== JSON Tool Call Fallback =====================
 
 /** Detect raw JSON function calls in model output (some models output tool calls as text instead of using the API) */
 function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | null {
-  const startMarker = '{"type":"function"';
   for (let i = 0; i < text.length; i++) {
     // Try matching with and without spaces after colons
     const substr = text.slice(i);
@@ -880,12 +898,12 @@ function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | nul
             const raw = text.slice(i, j + 1);
             try {
               const parsed = JSON.parse(raw);
-              if (parsed?.type === "function" && parsed?.name && parsed?.parameters) {
-                const params = typeof parsed.parameters === "string" ? parsed.parameters : JSON.stringify(parsed.parameters);
+              if (parsed?.type === "function" && parsed?.function?.name && parsed?.function?.arguments) {
+                const args = typeof parsed.function.arguments === "string" ? parsed.function.arguments : JSON.stringify(parsed.function.arguments);
                 return {
                   id: `call_fallback_${Date.now()}`,
                   type: "function",
-                  function: { name: parsed.name, arguments: params },
+                  function: { name: parsed.function.name, arguments: args },
                   raw,
                 };
               }
@@ -1038,9 +1056,18 @@ export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
   if (infoMatch) {
     const infoRef = infoMatch[1].trim();
     // Try to find the info dict content
-    const infoDict = raw.match(new RegExp(`${infoRef.replace(/\s+/g, '\\s+')}\\s*obj[^>]*>>`));
-    if (infoDict) {
-      const meta = infoDict[0].match(/\/Title\s*\(([^)]*)\)|\/Author\s*\(([^)]*)\)|\/Subject\s*\(([^)]*)\)/g);
+    // Match balanced << >> to handle > inside string values
+    const dictStart = raw.search(new RegExp(`${infoRef.replace(/\s+/g, '\\s+')}\\s*obj\\s*<<`));
+    if (dictStart !== -1) {
+      let depth = 2;
+      let pos = dictStart + raw.slice(dictStart).indexOf("<<") + 2;
+      while (depth > 0 && pos < raw.length) {
+        if (raw[pos] === "<" && raw[pos + 1] === "<") { depth++; pos++; }
+        else if (raw[pos] === ">" && raw[pos + 1] === ">") { depth--; pos++; }
+        pos++;
+      }
+      const infoDict = raw.slice(dictStart, pos);
+      const meta = infoDict.match(/\/Title\s*\(((?:[^()\\]|\\.)*)\)|\/Author\s*\(((?:[^()\\]|\\.)*)\)|\/Subject\s*\(((?:[^()\\]|\\.)*)\)/g);
       if (meta) {
         parts.push("[Document Info]");
         for (const m of meta) {
@@ -1053,18 +1080,18 @@ export async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
 
   // Extract text from uncompressed content streams: (text) Tj / TJ / '
   const textOps = [
-    ...raw.matchAll(/\(([^)]*)\)\s*Tj/g),
-    ...raw.matchAll(/\(([^)]*)\)\s*'/g),
-    ...raw.matchAll(/\(([^)]*)\)\s*"/g),
+    ...raw.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*Tj/g),
+    ...raw.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*'/g),
+    ...raw.matchAll(/\(((?:[^()\\]|\\.)*)\)\s*"/g),
   ];
   for (const m of textOps) {
     parts.push(m[1]);
   }
 
   // TJ arrays: [(text) num (text)] TJ
-  const tjArrays = raw.matchAll(/\[([^\]]*)\]\s*TJ/g);
+  const tjArrays = raw.matchAll(/\[((?:[^\[\]\\]|\\.)*)\]\s*TJ/g);
   for (const arr of tjArrays) {
-    const contents = arr[1].match(/\(([^)]*)\)/g);
+    const contents = arr[1].match(/\(((?:[^()\\]|\\.)*)\)/g);
     if (contents) {
       for (const c of contents) {
         parts.push(c.slice(1, -1));
@@ -1099,7 +1126,12 @@ export async function fileToBase64(fileUrl: string): Promise<string> {
   const resp = await fetch(fileUrl);
   const blob = await resp.blob();
   const buffer = await blob.arrayBuffer();
-  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
 }
 
 // ===================== LaTeX Renderer =====================
@@ -1140,8 +1172,17 @@ export async function renderLatex(env: Env, chatId: number, formula: string): Pr
 
 // ===================== Mermaid Renderer =====================
 
+function utf8ToBase64Url(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 export async function renderMermaid(env: Env, chatId: number, diagram: string): Promise<string> {
-  const encoded = btoa(diagram).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const encoded = utf8ToBase64Url(diagram);
   const renderUrl = `https://mermaid.ink/img/${encoded}`;
   const resp = await fetch(renderUrl);
   if (!resp.ok) return "Mermaid render failed.";

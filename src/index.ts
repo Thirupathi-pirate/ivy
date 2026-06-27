@@ -83,7 +83,14 @@ function sanitizeTelegramMarkdown(text: string): string {
     // Blockquotes → plain text
     .replace(/^>\s+/gm, "")
     // * at line start → • (avoids italic interpretation)
-    .replace(/^(\s*)\*\s+/gm, "$1• ");
+    .replace(/^(\s*)\*\s+/gm, "$1• ")
+    // Escape underscores to prevent accidental italic/bold in variable names
+    .replace(/_/g, "\\_")
+    // Escape brackets to prevent accidental link syntax
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    // Escape backticks to prevent accidental code blocks
+    .replace(/`/g, "\\`");
 }
 
 function setupBot(bot: Bot<MyContext>, env: Env) {
@@ -317,7 +324,12 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     const file = await ctx.api.getFile(largest.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
     const caption = photoMsg.caption?.trim() || "Describe this image in detail.";
-    const placeholder = await ctx.reply("📸 Analyzing image...");
+    let placeholder: any;
+    try {
+      placeholder = await ctx.reply("📸 Analyzing image...");
+    } catch {
+      return;
+    }
 
     try {
       const base64 = await fileToBase64(fileUrl);
@@ -328,10 +340,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       const chatIdForMem = ctx.chat.id;
       const photoMemories = await loadUserMemories(env.IVY_KV, chatIdForMem);
       const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt(photoMemories, hasMovies).replace(
-        "Keep responses friendly and natural, like a good friend who happens to be very knowledgeable.",
-        "Keep responses friendly and natural, and describe images in detail when shown."
-      );
+      const sysPrompt = getSystemPrompt(photoMemories, hasMovies) +
+        "\n\n📸 When shown an image, describe it in rich detail — objects, colors, composition, mood, and any text visible.";
       const sysIdx = history.findIndex((m) => m.role === "system");
       if (sysIdx >= 0) {
         history[sysIdx].content = sysPrompt;
@@ -366,19 +376,32 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         ctx.session.model
       );
 
+      // Strip image data from history before storing (KV quota + token waste)
+      const lastUserMsg = history[history.length - 1];
+      if (lastUserMsg?.role === "user" && typeof lastUserMsg.content !== "string") {
+        lastUserMsg.content = [caption, "(Image sent)"].join("\n");
+      }
+
       if (result.text) {
-        history.push({ role: "assistant", content: result.text });
+        history.push({ role: "assistant", content: sanitizeTelegramMarkdown(result.text) });
       }
 
       if (history.length > MAX_HISTORY) {
         const sysIdx = history.findIndex((m) => m.role === "system");
-        history = sysIdx >= 0
-          ? [history[sysIdx], ...history.slice(-(MAX_HISTORY - 1))]
-          : history.slice(-MAX_HISTORY);
+        if (sysIdx >= 0) {
+          const sysMsg = history[sysIdx];
+          history = [sysMsg, ...history.slice(-(MAX_HISTORY - 1))];
+        } else {
+          history = history.slice(-MAX_HISTORY);
+        }
       }
       ctx.session.history = history;
     } catch (e: any) {
-      await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, `Error: ${e.message}`);
+      if (placeholder) {
+        try {
+          await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, `Error: ${e.message}`);
+        } catch {}
+      }
     }
   });
 
@@ -487,15 +510,20 @@ function isBotMentioned(ctx: MyContext): boolean {
   const msg = ctx.message!;
   const me = ctx.me;
   if (msg.reply_to_message?.from?.id === me.id) return true;
-  if (msg.text && msg.entities) {
-    for (const ent of msg.entities) {
+
+  const checkEntities = (text: string, entities: readonly any[]) => {
+    for (const ent of entities) {
       if (ent.type === "mention") {
-        const mention = msg.text.slice(ent.offset, ent.offset + ent.length);
+        const mention = text.slice(ent.offset, ent.offset + ent.length);
         if (mention === `@${me.username}`) return true;
       }
       if (ent.type === "text_mention" && ent.user?.id === me.id) return true;
     }
-  }
+    return false;
+  };
+
+  if (msg.text && msg.entities && checkEntities(msg.text, msg.entities)) return true;
+  if (msg.caption && msg.caption_entities && checkEntities(msg.caption, msg.caption_entities)) return true;
   return false;
 }
 
@@ -564,7 +592,8 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   }
 
   if (result.text) {
-    const parts = splitLongMessage(sanitizeTelegramMarkdown(result.text));
+    const text = sanitizeTelegramMarkdown(result.text);
+    const parts = splitLongMessage(text);
     for (let i = 0; i < parts.length; i++) {
       if (i === 0 && placeholderMsg) {
         try {
@@ -582,15 +611,18 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         await ctx.reply(parts[i]);
       }
     }
-    history.push({ role: "assistant", content: result.text });
+    history.push({ role: "assistant", content: text });
   }
 
-  // Trim: keep system prompt + last N messages
+  // Trim: keep existing system prompt + last N messages
   if (history.length > MAX_HISTORY) {
     const sysIdx = history.findIndex((m) => m.role === "system");
-    ctx.session.history = sysIdx >= 0
-      ? [{ role: "system", content: getSystemPrompt(memories, hasMovies) }, ...history.slice(-(MAX_HISTORY - 1))]
-      : history.slice(-MAX_HISTORY);
+    if (sysIdx >= 0) {
+      const sysMsg = history[sysIdx];
+      ctx.session.history = [sysMsg, ...history.slice(-(MAX_HISTORY - 1))];
+    } else {
+      ctx.session.history = history.slice(-MAX_HISTORY);
+    }
   }
 }
 
@@ -603,7 +635,7 @@ app.all("*", async (c) => {
     const command = c.req.query("command");
     if (command === "set") {
       const url = new URL(c.req.url);
-      const webhookUrl = `${url.protocol}//${url.hostname}/`;
+      const webhookUrl = `${url.protocol}//${url.host}/`;
       const resp = await fetch(
         `https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}/setWebhook`,
         {
@@ -650,31 +682,49 @@ app.onError((err, c) => {
 
 // ---------- Cron: Fire due reminders ----------
 async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
-  const list = await env.IVY_KV.list({ prefix: "reminder:", limit: 100 });
   const now = Date.now();
-  for (const key of list.keys) {
-    const val = await env.IVY_KV.get(key.name);
-    if (!val) continue;
-    const parts = key.name.split(":");
-    if (parts.length < 4) continue;
-    const chatId = parseInt(parts[1], 10);
-    const timestamp = parseInt(parts[2], 10);
-    if (isNaN(chatId) || isNaN(timestamp)) continue;
-    if (timestamp <= now) {
-      const message = val.slice(0, 200);
-      try {
-        await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `⏰ *Reminder:* ${message}`,
-            parse_mode: "Markdown",
-          }),
-        });
-      } catch {}
-      await env.IVY_KV.delete(key.name);
+  let cursor: string | undefined;
+  while (true) {
+    const list = await env.IVY_KV.list({ prefix: "reminder:", limit: 100, cursor });
+    for (const key of list.keys) {
+      const raw = await env.IVY_KV.get(key.name);
+      if (!raw) continue;
+      const parts = key.name.split(":");
+      if (parts.length < 3) continue;
+      // Key format: reminder:<unix_timestamp>:<uuid>
+      const timestamp = parseInt(parts[1], 10);
+      if (isNaN(timestamp)) continue;
+      if (timestamp <= now) {
+        let chatId: number;
+        let message: string;
+        try {
+          const data = JSON.parse(raw);
+          chatId = data.chat_id;
+          message = (data.message || "").slice(0, 200);
+        } catch {
+          chatId = parseInt(parts[1], 10);
+          message = raw.slice(0, 200);
+        }
+        try {
+          const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: `⏰ *Reminder:* ${message}`,
+              parse_mode: "Markdown",
+            }),
+          });
+          if (resp.ok) {
+            await env.IVY_KV.delete(key.name);
+          }
+        } catch {
+          // Network error — leave reminder for next cron tick
+        }
+      }
     }
+    if (list.list_complete) break;
+    cursor = (list as any).cursor;
   }
 }
 

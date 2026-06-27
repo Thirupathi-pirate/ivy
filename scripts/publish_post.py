@@ -56,8 +56,10 @@ def fetch_unsplash_images(topic: str, count: int = 2) -> list:
         results = data.get("results", [])
         images = []
         for img in results[:count]:
-            # Fire download notification (required by API terms)
-            requests.get(img["links"]["download_location"], headers=headers, timeout=5)
+            try:
+                requests.get(img["links"]["download_location"], headers=headers, timeout=5)
+            except Exception:
+                pass
             images.append({
                 "path": img["urls"]["raw"] + "&fm=webp",
                 "alt": img.get("alt_description") or topic,
@@ -77,19 +79,21 @@ def yaml_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool) -> str:
-    now = datetime.now()
+    now = datetime.now().astimezone()
     date = now.strftime("%Y-%m-%d %H:%M:%S %z")
     lines = ["---", "layout: post", f'title: "{yaml_escape(title)}"', f"date: {date}", "toc: true"]
     if mermaid:
         lines.append("mermaid: true")
     if unsplash:
         lines.extend([
+            "description: >-",
+            f"  {description}",
             "image:",
             f'  path: "{unsplash["path"]}&w=1200&h=630&fit=crop"',
             f'  alt: "{yaml_escape(unsplash["alt"])}"',
-            "  photographer: " + unsplash['photographer'],
-            "  photographer_url: " + unsplash['photographer_url'],
-            "  unsplash_url: " + unsplash['unsplash_url'],
+            f'  photographer: "{yaml_escape(unsplash["photographer"])}"',
+            f'  photographer_url: "{yaml_escape(unsplash["photographer_url"])}"',
+            f'  unsplash_url: "{yaml_escape(unsplash["unsplash_url"])}"',
         ])
     else:
         lines.extend([
@@ -105,16 +109,23 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
 
 
 def insert_inline_image(content: str, img: dict | None) -> str:
-    """Insert a post-hero image with overlay credit inside the first content section."""
+    """Insert a post-hero image after the first \n##  heading's paragraph."""
     if not img:
         return content
     idx = content.find("\n## ")
+    if idx == -1 and content.startswith("## "):
+        idx = 0
     if idx != -1:
-        para = content.find("\n\n", idx)
+        # Find end of heading line
+        eol = content.find("\n", idx + 1)
+        if eol == -1:
+            eol = idx
+        # Find the next paragraph break after the heading
+        para = content.find("\n\n", eol)
         if para != -1:
             insert_pos = para
         else:
-            insert_pos = idx
+            insert_pos = eol
     else:
         insert_pos = content.find("\n\n") if content.find("\n\n") != -1 else 0
     image_block = (
@@ -132,7 +143,7 @@ def insert_inline_image(content: str, img: dict | None) -> str:
 
 
 def main():
-    topic = sys.argv[1] if len(sys.argv) > 1 else "Technology"
+    topic = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TOPIC", "The Future of AI Agents")
 
     if not BLOG_POST.exists():
         print(f"Error: {BLOG_POST} not found")

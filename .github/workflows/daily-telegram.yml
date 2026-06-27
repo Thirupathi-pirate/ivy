@@ -21,7 +21,7 @@ jobs:
   run-crew:
     runs-on: ubuntu-latest
     outputs:
-      post_url: ${{ steps.publish.outputs.post_url }}
+      post_url: ${{ steps.url.outputs.url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -54,9 +54,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add blog-source/_posts/
-          git commit -m "Add post: $(ls blog-source/_posts/ | tail -1) [skip ci]" || echo "No new post to commit"
-          git pull --rebase --autostash
-          git push
+          NEW_POST=$(git diff --name-only --cached -- blog-source/_posts/ | head -1)
+          git commit -m "Add post: ${NEW_POST##*/} [skip ci]" || echo "No new post to commit"
+          git pull --rebase --autostash || true
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -80,19 +80,34 @@ jobs:
           user_email: 'github-actions[bot]@users.noreply.github.com'
           cname: blog.aaruvi.space
 
+      - name: Push commit to main
+        if: success()
+        run: git push || true
+
       - name: Build post URL
         id: url
         run: |
-          SLUG=$(echo "${{ inputs.topic || 'The Future of AI Agents' }}" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9-]//g')
+          SLUG=$(echo "${{ inputs.topic || 'The Future of AI Agents' }}" | uv run python -c "import sys,re; t=sys.stdin.read().strip().lower(); t=re.sub(r'[^\w\s-]','',t); t=re.sub(r'[\s_]+','-',t); t=re.sub(r'-+','-',t); print(t.strip('-'))")
           echo "url=https://blog.aaruvi.space/$SLUG/" >> $GITHUB_OUTPUT
 
-      - name: Meta (date + thought)
+      - name: Meta (date + thought + greeting)
         id: meta
         run: |
           echo "date=$(date +'%d-%m-%Y')" >> $GITHUB_OUTPUT
-          QUOTE_JSON=$(curl -s https://dummyjson.com/quotes/random)
-          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['quote'])")
-          AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['author'])")
+          IST_HOUR=$(TZ='Asia/Kolkata' date +'%H')
+          if [ "$IST_HOUR" -ge 5 ] && [ "$IST_HOUR" -lt 12 ]; then
+            GREETING="🌅 Morning Blog"
+          elif [ "$IST_HOUR" -ge 12 ] && [ "$IST_HOUR" -lt 17 ]; then
+            GREETING="☀️ Afternoon Blog"
+          elif [ "$IST_HOUR" -ge 17 ] && [ "$IST_HOUR" -lt 21 ]; then
+            GREETING="🌆 Evening Blog"
+          else
+            GREETING="🌙 Night Blog"
+          fi
+          echo "greeting=$GREETING" >> $GITHUB_OUTPUT
+          QUOTE_JSON=$(curl -s --max-time 5 https://dummyjson.com/quotes/random || echo '{}')
+          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('quote','Keep learning!'))" 2>/dev/null || echo "Keep learning!")
+          AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('author','Unknown'))" 2>/dev/null || echo "Unknown")
           echo "thought<<EOF" >> $GITHUB_OUTPUT
           echo "\"$CONTENT\" ✨" >> $GITHUB_OUTPUT
           echo "   — $AUTHOR" >> $GITHUB_OUTPUT
@@ -105,7 +120,7 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           message: |
-            ✍️ Morning Blog — ${{ steps.meta.outputs.date }}
+            ${{ steps.meta.outputs.greeting }} — ${{ steps.meta.outputs.date }}
 
             ${{ inputs.topic || 'The Future of AI Agents' }}
 
@@ -118,8 +133,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FAILED_STEP=$(gh run view ${{ github.run_id }} --log-failed 2>&1 | grep -m1 '##\[group\]' | sed 's/.*##\[group\]//' || echo "unknown")
-          ERROR_MSG=$(gh run view ${{ github.run_id }} --log-failed 2>&1 | grep -iE '(Error:|exit code |traceback|Exception)' | head -3)
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed 2>&1)
+          FAILED_STEP=$(echo "$LOGS" | grep -m1 '##\[group\]' | sed 's/.*##\[group\]//' || echo "unknown")
+          ERROR_MSG=$(echo "$LOGS" | grep -iE '(Error:|exit code |traceback|Exception)' | head -3)
           {
             echo "❌ Blog Writer Failed"
             echo ""
