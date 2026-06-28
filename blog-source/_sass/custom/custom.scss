@@ -1,3 +1,11 @@
+/* ── Disable shimmer overlay (causes blur on cached images) ── */
+.shimmer::before {
+  display: none !important;
+}
+.shimmer {
+  background: transparent !important;
+}
+
 /* ═══════════════════════════════════════════════
    Midnight Purple Theme for Chirpy
    bg: #12121E  sidebar: #1A1A2E  accent: #BB86FC
