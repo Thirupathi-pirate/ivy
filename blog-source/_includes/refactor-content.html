@@ -171,41 +171,40 @@
 
 <!-- Create heading anchors -->
 
-{% assign heading = 'h2, h3, h4, h5, h6' %}
+{% assign heading_levels = '2,3,4,5' | split: ',' %}
+{% assign _heading_content = _content %}
 
-{% if _content contains 'h2' or _content contains 'h3' or _content contains 'h4' or _content contains 'h5' or _content contains 'h6' %}
-  {% assign _heading_content = null %}
-  {% assign _heading_snippets = _content | split: '</h' %}
+{% for level in heading_levels %}
+  {% assign mark_start = '<h' | append: level | append: ' id="' %}
+  {% assign mark_end = '</h' | append: level | append: '>' %}
 
-  {% for _snippet in _heading_snippets %}
-    {% if forloop.first %}
-      {% assign _heading_content = _snippet %}
-    {% else %}
-      {% assign _parts = _snippet | split: '>' %}
-      {% assign _tag_content = _parts | first %}
+  {% if _heading_content contains mark_start %}
+    {% assign _new_content = null %}
+    {% assign heading_snippets = _heading_content | split: mark_start %}
 
-      {% if _tag_content contains '<' %}
-        {% assign _heading_content = _heading_content | append: '</h' | append: _snippet %}
-      {% else %}
-        {% assign _heading_tag = _snippet | slice: 0 %}
-        {% assign _id = _tag_content | slugify %}
-        {% assign _heading_content = _heading_content
-          | append: '</h'
-          | append: _heading_tag
-          | append: ' id="'
-          | append: _id
-          | append: '"'
-        %}
-        {% assign _heading_content = _heading_content | append: '>' | append: _tag_content %}
-        {% assign _heading_content = _heading_content | append: '<a href="#' | append: _id | append: '" class="anchor text-muted"><i class="fas fa-hashtag"></i></a>' %}
-
-        {% assign _snippet_rest = _snippet | remove_first: _tag_content | remove_first: '>' %}
-        {% assign _heading_content = _heading_content | append: _snippet_rest %}
+    {% for snippet in heading_snippets %}
+      {% if forloop.first %}
+        {% assign _new_content = snippet %}
+        {% continue %}
       {% endif %}
-    {% endif %}
-  {% endfor %}
 
-  {% assign _content = _heading_content %}
-{% endif %}
+      {% assign id = snippet | split: '"' | first %}
+      {% assign anchor = '<a href="#'
+        | append: id
+        | append: '" class="anchor text-muted"><i class="fas fa-hashtag"></i></a>'
+      %}
+
+      {% assign left = snippet | split: mark_end | first %}
+      {% assign right = snippet | slice: left.size, snippet.size %}
+      {% assign left = left | replace_first: '">', '"><span class="me-2">' | append: '</span>' %}
+
+      {% assign _new_content = _new_content | append: mark_start | append: left | append: anchor | append: right %}
+    {% endfor %}
+
+    {% assign _heading_content = _new_content %}
+  {% endif %}
+{% endfor %}
+
+{% assign _content = _heading_content %}
 
 {{ _content }}
