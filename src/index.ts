@@ -12,6 +12,7 @@ interface Env {
   GROQ_API_KEY: string;
   GITHUB_PAT: string;
   GITHUB_REPO: string;
+  ADMIN_PASSWORD?: string;
   TAVILY_API_KEY?: string;
   TMDB_API_KEY?: string;
   REDDIT_CLIENT_ID?: string;
@@ -629,6 +630,58 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
 // ---------- Hono App ----------
 
 const app = new Hono<{ Bindings: Env }>();
+
+// CORS helper for admin routes
+function corsHeaders(origin?: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin || "https://blog.aaruvi.space",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+  };
+}
+
+// Admin API: verify password + list posts
+app.post("/admin/posts", async (c) => {
+  const { password } = await c.req.json<{ password?: string }>();
+  if (!password || !c.env.ADMIN_PASSWORD || password !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "Invalid verification code" }, 401, corsHeaders(c.req.header("Origin")));
+  }
+  const resp = await fetch(
+    `https://api.github.com/repos/${c.env.GITHUB_REPO}/contents/blog-source/_posts`,
+    { headers: { Authorization: `Bearer ${c.env.GITHUB_PAT}`, Accept: "application/vnd.github.v3+json", "User-Agent": "ivy-admin" } }
+  );
+  if (!resp.ok) return c.json({ error: "Failed to fetch posts" }, 500, corsHeaders(c.req.header("Origin")));
+  const files: any[] = await resp.json();
+  const posts = files
+    .filter((f: any) => f.name.endsWith(".md"))
+    .map((f: any) => ({ name: f.name, path: f.path, sha: f.sha, url: f.name.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/\.md$/, "") }));
+  return c.json({ posts }, 200, corsHeaders(c.req.header("Origin")));
+});
+
+// Admin API: delete a post
+app.post("/admin/delete", async (c) => {
+  const { password, path, sha } = await c.req.json<{ password?: string; path?: string; sha?: string }>();
+  if (!password || !c.env.ADMIN_PASSWORD || password !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "Invalid verification code" }, 401, corsHeaders(c.req.header("Origin")));
+  }
+  if (!path || !sha) return c.json({ error: "Missing path or sha" }, 400, corsHeaders(c.req.header("Origin")));
+  const resp = await fetch(
+    `https://api.github.com/repos/${c.env.GITHUB_REPO}/contents/${path}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${c.env.GITHUB_PAT}`, Accept: "application/vnd.github.v3+json", "User-Agent": "ivy-admin", "Content-Type": "application/json" },
+      body: JSON.stringify({ message: `Delete post: ${path} [skip ci]`, sha }),
+    }
+  );
+  if (!resp.ok) return c.json({ error: "Delete failed: " + (await resp.text()) }, 500, corsHeaders(c.req.header("Origin")));
+  return c.json({ success: true }, 200, corsHeaders(c.req.header("Origin")));
+});
+
+// CORS preflight for admin routes
+app.options("/admin/:path", async (c) => {
+  return c.newResponse(null, 204, corsHeaders(c.req.header("Origin")));
+});
 
 app.all("*", async (c) => {
   if (c.req.method === "GET") {
