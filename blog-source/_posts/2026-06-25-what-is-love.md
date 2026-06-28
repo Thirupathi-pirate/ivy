@@ -2,8 +2,11 @@
 layout: post
 title: "Let’s Talk About Love: What Does it Even Mean in 2026? 💖"
 date: 2026-06-25 10:14:47 
+last_modified_at: 2026-06-25 10:14:47
 toc: true
 mermaid: true
+tags: [love, relationships, psychology, society]
+categories: [culture]
 image:
   path: "https://images.unsplash.com/photo-1561612217-e5147162fd31?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHx3aGF0JTIwaXMlMjBsb3ZlJTIwJTNGfGVufDB8MHx8fDE3ODIzODI0ODd8MA&ixlib=rb-4.1.0&w=1200&h=630&fit=crop"
   alt: "love is love wall art with brown wooden frame"

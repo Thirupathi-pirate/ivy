@@ -2,8 +2,11 @@
 layout: post
 title: "Beyond the Prompt: Navigating the Era of Agentic AI in 2026"
 date: 2026-06-26 08:49:00 
+last_modified_at: 2026-06-26 08:49:00
 toc: true
 mermaid: true
+tags: [AI, agents, automation, technology]
+categories: [tech]
 image:
   path: "https://images.unsplash.com/photo-1694903089438-bf28d4697d9a?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxUaGUlMjBGdXR1cmUlMjBvZiUyMEFJJTIwQWdlbnRzfGVufDB8MHx8fDE3ODI0NjM3NDB8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "robot and human hands reaching toward ai text"

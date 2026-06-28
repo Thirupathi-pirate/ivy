@@ -2,8 +2,11 @@
 layout: post
 title: "The Great Delegation: Making Sense of Agentic AI in 2026"
 date: 2026-06-27 08:16:54 
+last_modified_at: 2026-06-27 08:16:54
 toc: true
 mermaid: true
+tags: [AI, agents, automation, future]
+categories: [tech]
 image:
   path: "https://images.unsplash.com/photo-1694903089438-bf28d4697d9a?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxUaGUlMjBGdXR1cmUlMjBvZiUyMEFJJTIwQWdlbnRzfGVufDB8MHx8fDE3ODI1NDgyMTR8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "robot and human hands reaching toward ai text"

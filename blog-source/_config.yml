@@ -33,7 +33,7 @@ assets:
 toc: true
 
 webmaster_verifications:
-  google: ""
+  google: "DVlakunl_jZgYbXcHvX3KfmocgyIiaIg81"
   bing: ""
   yandex: ""
   baidu: ""
@@ -48,7 +48,7 @@ plugins:
   - jekyll-sitemap
 
 pwa:
-  enabled: false
+  enabled: true
   cache:
     enabled: true
     deny_paths:

@@ -2,8 +2,11 @@
 layout: post
 title: "The 150W Legacy: Looking Back at the Realme GT Neo 3 from 2026"
 date: 2026-06-26 14:17:15 
+last_modified_at: 2026-06-26 14:17:15
 toc: true
 mermaid: true
+tags: [smartphones, review, technology, charging]
+categories: [tech]
 image:
   path: "https://images.unsplash.com/photo-1656127321685-b33aad5d9a5c?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxndCUyMG5lbyUyMDMlMjBwaG9uZXxlbnwwfDB8fHwxNzgyNDUzMzI4fDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a man sitting at a desk"

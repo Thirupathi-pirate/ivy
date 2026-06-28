@@ -36,14 +36,17 @@
 <!-- Theme Color (mobile browser) -->
 <meta name="theme-color" content="#12121E">
 
+<!-- Referrer policy -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
+
 <!-- Canonical URL -->
 <link rel="canonical" href="{{ page.url | absolute_url }}">
 
 <!-- Meta keywords -->
 <meta name="keywords" content="technology, science, culture, tech blog, future, AI, {{ page.tags | join: ', ' | default: '' }}">
 
-<!-- Google Search Console — replace with your verification code -->
-<!-- <meta name="google-site-verification" content="YOUR_VERIFICATION_CODE" /> -->
+<!-- Google Search Console -->
+<meta name="google-site-verification" content="DVlakunl_jZgYbXcHvX3KfmocgyIiaIg81" />
 
 <script>
 /* Mermaid dark theme — matches Midnight Purple */
@@ -84,9 +87,13 @@ window.mermaid = {
 
 {% if page.image %}
   <meta property="og:image" content="{{ page.image.path }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
   <meta name="twitter:image" content="{{ page.image.path }}">
 {% else %}
   <meta property="og:image" content="{{ site.url }}/assets/avatar.webp">
+  <meta property="og:image:width" content="192">
+  <meta property="og:image:height" content="192">
   <meta name="twitter:image" content="{{ site.url }}/assets/avatar.webp">
 {% endif %}
 
@@ -97,7 +104,9 @@ window.mermaid = {
   {% endif %}
   <meta property="article:author" content="{{ site.url }}">
   {% if page.tags.size > 0 %}
-    <meta property="article:tag" content="{{ page.tags | join: ', ' }}">
+    {% for tag in page.tags %}
+    <meta property="article:tag" content="{{ tag }}">
+    {% endfor %}
   {% endif %}
   {% if page.categories.size > 0 %}
     <meta property="article:section" content="{{ page.categories | first }}">
@@ -116,13 +125,32 @@ window.mermaid = {
       "name": "Home",
       "item": "{{ site.url }}/"
     }
-    {% if page.layout == 'post' %},
-    {
-      "@type": "ListItem",
-      "position": 2,
-      "name": {{ page.title | jsonify }},
-      "item": "{{ page.url | absolute_url }}"
-    }
+    {% if page.layout == 'post' %}
+      {% if page.categories.size > 0 %}
+        {% assign pos = 2 %}
+        {% for cat in page.categories %},
+        {
+          "@type": "ListItem",
+          "position": {{ pos }},
+          "name": "{{ cat }}",
+          "item": "{{ site.url }}/categories/{{ cat | slugify }}/"
+        }
+        {% assign pos = pos | plus: 1 %}
+        {% endfor %},
+        {
+          "@type": "ListItem",
+          "position": {{ page.categories.size | plus: 2 }},
+          "name": {{ page.title | jsonify }},
+          "item": "{{ page.url | absolute_url }}"
+        }
+      {% else %},
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": {{ page.title | jsonify }},
+          "item": "{{ page.url | absolute_url }}"
+        }
+      {% endif %}
     {% endif %}
   ]
 }

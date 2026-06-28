@@ -2,8 +2,11 @@
 layout: post
 title: "The Evolution of Intimacy: Love in Modern Terms vs. Old Terms (2026 Edition)"
 date: 2026-06-25 09:59:35 
+last_modified_at: 2026-06-25 09:59:35
 toc: true
 mermaid: true
+tags: [relationships, dating, society, psychology]
+categories: [culture]
 image:
   path: "https://images.unsplash.com/photo-1523054147397-21c07b58c90e?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxsb3ZlJTIwaW4lMjBtb2Rlcm4lMjB0ZXJtcyUyMGFuZCUyMG9sZCUyMHRlcm1zfGVufDB8MHx8fDE3ODIzODE1NzV8MA&ixlib=rb-4.1.0&w=1200&h=630&fit=crop"
   alt: "Love scrabble tiles on book page"

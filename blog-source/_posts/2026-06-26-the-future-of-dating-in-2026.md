@@ -2,8 +2,11 @@
 layout: post
 title: "The Death of the Swipe: What Dating Actually Looks Like in 2026"
 date: 2026-06-26 05:39:56 
+last_modified_at: 2026-06-26 05:39:56
 toc: true
 mermaid: true
+tags: [dating, relationships, society, technology]
+categories: [culture]
 image:
   path: "https://images.unsplash.com/photo-1758844899311-8d16093ff165?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxUaGUlMjBGdXR1cmUlMjBvZiUyMERhdGluZyUyMGluJTIwMjAyNnxlbnwwfDB8fHwxNzgyNDUyMzk1fDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "The year 2026 in metallic 3D numbers."

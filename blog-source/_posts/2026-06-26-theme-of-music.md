@@ -2,8 +2,11 @@
 layout: post
 title: "The Sonic Shift: What Music Will Actually Feel Like in 2026"
 date: 2026-06-26 15:44:34 
+last_modified_at: 2026-06-26 15:44:34
 toc: true
 mermaid: true
+tags: [music, technology, AI, culture]
+categories: [culture]
 image:
   path: "https://images.unsplash.com/photo-1507838153414-b4b713384a76?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxUaGVtZSUyMG9mJTIwTXVzaWN8ZW58MHwwfHx8MTc4MjQ4NzA0MHww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "tilt selective photograph of music notes"

@@ -2,8 +2,11 @@
 layout: post
 title: "Looking Back: Is the Samsung Galaxy Book 4 Still Worth It in 2026?"
 date: 2026-06-26 16:32:49 
+last_modified_at: 2026-06-26 16:32:49
 toc: true
 mermaid: true
+tags: [laptops, samsung, review, technology]
+categories: [tech]
 image:
   path: "https://images.unsplash.com/photo-1654852360714-3899af1f5be7?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxzYW1zdW5nJTIwZ2FsYXh5Ym9vayUyMDR8ZW58MHwwfHx8MTc4MjQ5MTU2OXww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a close-up of a cell phone"

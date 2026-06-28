@@ -2,8 +2,11 @@
 layout: post
 title: "The Great Convergence: Navigating the Era of Neural Interfaces in 2026"
 date: 2026-06-26 15:54:40 
+last_modified_at: 2026-06-26 15:54:40
 toc: true
 mermaid: true
+tags: [brain-computer, AI, neuroscience, neuralink]
+categories: [tech, science]
 image:
   path: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxOZXVyYWwlMjBJbnRlcmZhY2VzfGVufDB8MHx8fDE3ODI0ODkyODB8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a computer circuit board with a brain on it"

@@ -2,8 +2,11 @@
 layout: post
 title: "The Evolution of 'Hello World': Coding at the Start of 2026"
 date: 2026-06-25 16:57:10 
+last_modified_at: 2026-06-25 16:57:10
 toc: true
 mermaid: true
+tags: [programming, coding, technology, software]
+categories: [tech]
 image:
   path: "https://images.unsplash.com/photo-1500576992153-0271099def59?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxoZWxsbyUyMHdvcmxkfGVufDB8MHx8fDE3ODI0MDY2Mjl8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "person holding Hello! sticker"
