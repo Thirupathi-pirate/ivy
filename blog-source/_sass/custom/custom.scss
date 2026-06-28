@@ -558,8 +558,7 @@ h1.post-title {
 /* ── Post card on homepage ── */
 .post-card {
   background: transparent;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  margin-bottom: 1.5rem;
+  transition: transform 0.25s ease;
 }
 
 .post-card:hover {
@@ -569,9 +568,9 @@ h1.post-title {
 .post-card .card-body {
   background: #1A1A2E;
   border: 1px solid #2A2A3E;
-  border-radius: 20px;
+  border-radius: 14px;
   padding: 1.75rem;
-  transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+  transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
   position: relative;
   overflow: hidden;
 }
@@ -585,7 +584,7 @@ h1.post-title {
   height: 2px;
   background: linear-gradient(90deg, transparent, #BB86FC, transparent);
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.25s;
 }
 
 .post-card:hover .card-body {
@@ -605,11 +604,6 @@ h1.post-title {
   font-weight: 700;
   font-size: 1.2rem;
   line-height: 1.4;
-  transition: color 0.3s;
-}
-
-.post-card:hover .card-title a {
-  color: #BB86FC;
 }
 
 .post-card .card-text {
@@ -629,34 +623,6 @@ h1.post-title {
   color: #9A9AB0;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.post-card .post-meta .categories {
-  color: #BB86FC;
-}
-
-.post-card .post-meta .pin {
-  color: #BB86FC;
-}
-
-#post-list .card-wrapper {
-  border: none;
-  background: transparent;
-}
-
-#post-list .post-preview {
-  gap: 1rem;
-}
-
-#post-list .post-preview img {
-  border-radius: 14px;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-#post-list .post-preview img:hover {
-  transform: scale(1.02);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
 }
 
 /* ── TOC panel ── */
@@ -1147,32 +1113,12 @@ a.tag:hover {
     color: #1C1C2A;
   }
 
-  .post-card:hover .card-title a {
-    color: #7C4DFF;
-  }
-
   .post-card .card-text {
     color: #6A6A7E;
   }
 
   .post-card .post-meta {
     color: #6A6A7E;
-  }
-
-  .post-card .post-meta .categories {
-    color: #7C4DFF;
-  }
-
-  .post-card .post-meta .pin {
-    color: #7C4DFF;
-  }
-
-  #post-list .post-preview img {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  }
-
-  #post-list .post-preview img:hover {
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.14);
   }
 
   #panel-wrapper .panel-heading {

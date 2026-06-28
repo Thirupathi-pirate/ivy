@@ -41,8 +41,12 @@
       {% assign _left = _left | prepend: IMG_TAG %}
       {% assign _img_class = _left | split: 'class="' | last %}
       {% assign _img_class = _img_class | split: '"' | first %}
-      {% assign _lqip = _left | split: 'lqip="' | last %}
-      {% assign _lqip = _lqip | split: '"' | first %}
+      {% if _left contains 'lqip="' %}
+        {% assign _lqip = _left | split: 'lqip="' | last %}
+        {% assign _lqip = _lqip | split: '"' | first %}
+      {% else %}
+        {% assign _lqip = '' %}
+      {% endif %}
       {% assign _src = _left | split: 'src="' | last %}
       {% assign _src = _src | split: '"' | first %}
       {% assign _lazyload = true %}
