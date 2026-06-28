@@ -1,3 +1,14 @@
+<!-- Preload LCP image (avatar + first post cover) -->
+<link rel="preload" as="image" href="/assets/avatar.webp" fetchpriority="high">
+{% assign first_post = site.posts | first %}
+{% if first_post and first_post.image %}
+  {% assign first_src = first_post.image.path | default: first_post.image %}
+  {% if first_src contains '://' %}
+    {% assign first_srcset = first_src | replace: 'w=1200', 'w=680' | replace: 'h=630', 'h=357' %}
+    <link rel="preload" as="image" href="{{ first_srcset }}" imagesrcset="{{ first_srcset }} 680w, {{ first_src }} 1200w" imagesizes="(max-width: 768px) 100vw, 50vw" fetchpriority="high">
+  {% endif %}
+{% endif %}
+
 <!-- Google Fonts — non-blocking (Chirpy doesn't load these) -->
 <link rel="preload" as="style" crossorigin
   href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&display=swap">
@@ -23,6 +34,10 @@
 
 <!-- Referrer policy -->
 <meta name="referrer" content="strict-origin-when-cross-origin">
+
+<!-- Security headers (HTTP equivalents for browsers that support meta) -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net fonts.googleapis.com; img-src 'self' images.unsplash.com *.unsplash.com data:; font-src 'self' fonts.gstatic.com cdn.jsdelivr.net; connect-src 'self' static.cloudflareinsights.com; base-uri 'self';">
+<meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), interest-cohort=()">
 
 <!-- Canonical URL -->
 <link rel="canonical" href="{{ page.url | absolute_url }}">

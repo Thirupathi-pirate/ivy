@@ -1,0 +1,207 @@
+{% assign _content = include.content %}
+
+{% if _content contains '<table' %}
+  {% assign _content = _content
+    | replace: '<table', '<div class="table-wrapper"><table'
+    | replace: '</table>', '</table></div>'
+    | replace: '<code><div class="table-wrapper">', '<code>'
+    | replace: '</table></div></code>', '</table></code>'
+  %}
+{% endif %}
+
+{% if _content contains '<pre class="highlight">' %}
+  {% assign _content = _content
+    | replace: '<div class="highlight"><pre class="highlight"><code', '<div class="highlight"><code'
+    | replace: '</code></pre></div>', '</code></div>'
+  %}
+{% endif %}
+
+{% if _content contains '<input type="checkbox"' %}
+  {% assign _content = _content
+    | replace: '<input type="checkbox" class="task-list-item-checkbox" disabled="disabled" checked="checked" />',
+      '<i class="fas fa-check-circle fa-fw checked"></i>'
+    | replace: '<input type="checkbox" class="task-list-item-checkbox" disabled="disabled" />',
+      '<i class="far fa-circle fa-fw"></i>'
+  %}
+{% endif %}
+
+{% assign IMG_TAG = '<img ' %}
+
+{% if _content contains IMG_TAG %}
+  {% assign _img_content = null %}
+  {% assign _img_snippets = _content | split: IMG_TAG %}
+
+  {% for _img_snippet in _img_snippets %}
+    {% if forloop.first %}
+      {% assign _img_content = _img_snippet %}
+    {% else %}
+      {% assign _left = _img_snippet | split: '>' | first %}
+      {% assign _right = _img_snippet | remove_first: _left %}
+
+      {% assign _left = _left | prepend: IMG_TAG %}
+      {% assign _img_class = _left | split: 'class="' | last %}
+      {% assign _img_class = _img_class | split: '"' | first %}
+      {% assign _lqip = _left | split: 'lqip="' | last %}
+      {% assign _lqip = _lqip | split: '"' | first %}
+      {% assign _src = _left | split: 'src="' | last %}
+      {% assign _src = _src | split: '"' | first %}
+      {% assign _lazyload = true %}
+      {% assign _has_lqip = false %}
+      {% assign _wrapper_class = 'normal' %}
+      {% assign _alt = _left | split: 'alt="' | last %}
+      {% assign _alt = _alt | split: '"' | first %}
+
+      {% if _left contains 'lqip=' %}
+        {% assign _has_lqip = true %}
+        {% assign _wrapper_class = 'blur' %}
+      {% endif %}
+
+      {% if _lqip != '' %}
+        {% assign _wrapper_class = 'blur' %}
+      {% endif %}
+
+      {% if _src == '' or _src == nil %}
+        {% assign _lazyload = false %}
+      {% endif %}
+
+      {% if _left contains 'data-src' or _left contains 'lqip=' %}
+        {% assign _lazyload = false %}
+      {% endif %}
+
+      {% if _left contains 'no-lazyload' %}
+        {% assign _lazyload = false %}
+      {% endif %}
+
+      {% if _left contains 'loading=' %}
+        {% assign _lazyload = false %}
+      {% endif %}
+
+      {% if _has_lqip or _wrapper_class == 'blur' %}
+        {% assign _wrapper_class = 'blur' %}
+      {% endif %}
+
+      {% unless _has_lqip or _wrapper_class == 'blur' %}
+        {% assign _wrapper_class = 'shimmer' %}
+      {% endunless %}
+
+      {% if page.layout == 'home' %}
+        {% assign _wrapper_start = '<div class="preview-img ' | append: _wrapper_class | append: '">' %}
+        {% assign _img_content = _img_content | append: _wrapper_start %}
+        {% assign _right = _right | prepend: '></div' %}
+      {% else %}
+        {% assign _parent = _right | slice: 1, 4 %}
+
+        {% if _parent == '</a>' %}
+          {% assign _wrapper_start = _right | split: '>' | first %}
+          {% assign _right = _right | remove_first: _wrapper_start %}
+          {% assign _wrapper_start = _wrapper_start | append: '><div class="preview-img ' | append: _wrapper_class | append: '">' %}
+          {% assign _img_content = _img_content | append: _wrapper_start %}
+
+          {% unless _left ends with '>' %}
+            {% assign _img_content = _img_content | append: '>' %}
+            {% assign _right = _right | remove_first: '>' %}
+          {% endunless %}
+
+          {% assign _right = _right | prepend: '</div>' %}
+        {% elsif _parent contains '<' %}
+          {% assign _wrapper_start = '<div class="preview-img ' | append: _wrapper_class | append: '">' %}
+          {% assign _img_content = _img_content | append: _wrapper_start %}
+          {% assign _right = _right | prepend: '></div' %}
+        {% endif %}
+      {% endif %}
+
+      {% if _lazyload %}
+        {% assign _left = _left | append: ' loading="lazy"' %}
+      {% endif %}
+
+      {% assign _img_content = _img_content | append: _left | append: _right %}
+    {% endif %}
+  {% endfor %}
+
+  {% assign _content = _img_content %}
+{% endif %}
+
+<!-- Add header for code snippets -->
+
+{% if _content contains '<div class="highlight"><code>' %}
+  {% assign _code_snippets = _content | split: '<div class="highlight"><code>' %}
+
+  {% for _snippet in _code_snippets %}
+    {% if forloop.first %}
+      {% assign _code_content = _snippet %}
+    {% else %}
+      {% assign _left = _snippet | split: '</code></div>' | first %}
+
+      {% if _left contains '&lt;' and _left contains 'nf' %}
+        {% assign _lang = _left | split: 'nf' | last | split: '&lt;' | first | strip %}
+      {% endif %}
+
+      {% if _lang == nil or _lang == empty %}
+        {% assign _lang = 'code' %}
+      {% endif %}
+
+      {% assign _header_content = '<div class="code-header d-flex justify-content-between">'
+        | append: '<span class="code-header-lang">' | append: _lang | append: '</span>'
+      %}
+
+      {% if _left contains 'file="' %}
+        {% assign _file_name = _left | split: 'file="' | last | split: '"' | first %}
+        {% assign _header_content = _header_content
+          | append: '<span class="code-header-filename d-flex align-items-center">'
+          | append: '<i class="far fa-file-code fa-fw me-2"></i>'
+          | append: _file_name | append: '</span>'
+        %}
+      {% endif %}
+
+      {% assign _header_content = _header_content | append: '</div>' %}
+
+      {% assign _code_content = _code_content | append: _header_content %}
+      {% assign _code_content = _code_content | append: '<div class="highlight"><code>' %}
+      {% assign _code_content = _code_content | append: _left %}
+      {% assign _code_content = _code_content | append: '</code></div>' %}
+    {% endif %}
+  {% endfor %}
+
+  {% assign _content = _code_content %}
+{% endif %}
+
+<!-- Create heading anchors -->
+
+{% assign heading = 'h2, h3, h4, h5, h6' %}
+
+{% if _content contains 'h2' or _content contains 'h3' or _content contains 'h4' or _content contains 'h5' or _content contains 'h6' %}
+  {% assign _heading_content = null %}
+  {% assign _heading_snippets = _content | split: '</h' %}
+
+  {% for _snippet in _heading_snippets %}
+    {% if forloop.first %}
+      {% assign _heading_content = _snippet %}
+    {% else %}
+      {% assign _parts = _snippet | split: '>' %}
+      {% assign _tag_content = _parts | first %}
+
+      {% if _tag_content contains '<' %}
+        {% assign _heading_content = _heading_content | append: '</h' | append: _snippet %}
+      {% else %}
+        {% assign _heading_tag = _snippet | slice: 0 %}
+        {% assign _id = _tag_content | slugify %}
+        {% assign _heading_content = _heading_content
+          | append: '</h'
+          | append: _heading_tag
+          | append: ' id="'
+          | append: _id
+          | append: '"'
+        %}
+        {% assign _heading_content = _heading_content | append: '>' | append: _tag_content %}
+        {% assign _heading_content = _heading_content | append: '<a href="#' | append: _id | append: '" class="anchor text-muted"><i class="fas fa-hashtag"></i></a>' %}
+
+        {% assign _snippet_rest = _snippet | remove_first: _tag_content | remove_first: '>' %}
+        {% assign _heading_content = _heading_content | append: _snippet_rest %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+
+  {% assign _content = _heading_content %}
+{% endif %}
+
+{{ _content }}
