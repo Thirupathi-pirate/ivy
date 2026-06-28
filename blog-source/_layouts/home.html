@@ -151,15 +151,13 @@ layout: default
 {% endif %}
 
 <script>
-(function() {
-  // Clean up shimmer/loading artifacts on all article images
+document.addEventListener('DOMContentLoaded', function() {
+  // Clean up shimmer on images that loaded from cache before JS listeners attached
   document.querySelectorAll('article img').forEach(function(img) {
-    if (img.complete) {
-      img.dispatchEvent(new Event('load'));
-    }
+    if (img.complete) img.dispatchEvent(new Event('load'));
   });
 
-  // Make entire card clickable (clicking text, not just image)
+  // Make entire card clickable
   document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
     card.addEventListener('click', function(e) {
       if (e.target.closest('a')) return;
@@ -167,5 +165,5 @@ layout: default
       if (link) location.href = link.href;
     });
   });
-})();
+});
 </script>
