@@ -675,6 +675,18 @@ app.post("/admin/delete", async (c) => {
     }
   );
   if (!resp.ok) return c.json({ error: "Delete failed: " + (await resp.text()) }, 500, corsHeaders(c.req.header("Origin")));
+  // Trigger rebuild workflow so the homepage updates automatically
+  const dispatchResp = await fetch(
+    `https://api.github.com/repos/${c.env.GITHUB_REPO}/actions/workflows/rebuild-deploy.yml/dispatches`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${c.env.GITHUB_PAT}`, Accept: "application/vnd.github.v3+json", "User-Agent": "ivy-admin", "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main" }),
+    }
+  );
+  if (!dispatchResp.ok) {
+    console.error("Rebuild dispatch failed:", await dispatchResp.text());
+  }
   return c.json({ success: true }, 200, corsHeaders(c.req.header("Origin")));
 });
 
