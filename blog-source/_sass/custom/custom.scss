@@ -127,14 +127,12 @@ input:focus-visible {
   background-clip: text;
 }
 
-#topbar #sidebar-trigger,
-#topbar #search-trigger {
+#topbar #sidebar-trigger {
   color: #C4C4D4;
   transition: color 0.2s;
 }
 
-#topbar #sidebar-trigger:hover,
-#topbar #search-trigger:hover {
+#topbar #sidebar-trigger:hover {
   color: #BB86FC;
 }
 
@@ -232,7 +230,7 @@ h1.post-title {
 .post-hero {
   position: relative;
   width: 100%;
-  border-radius: 12px;
+  border-radius: 20px;
   overflow: hidden;
   margin-bottom: 2.5rem;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
@@ -253,7 +251,7 @@ h1.post-title {
   font-family: "Google Sans", sans-serif;
   font-size: 0.75rem;
   padding: 4px 12px;
-  border-top-left-radius: 8px;
+  border-top-left-radius: 14px;
 }
 
 .post-hero-credit a {
@@ -309,7 +307,7 @@ h1.post-title {
   padding: 1.25rem 0 1.25rem 1.5rem;
   margin: 2rem 0;
   background: rgba(187, 134, 252, 0.06);
-  border-radius: 0 12px 12px 0;
+  border-radius: 0 18px 18px 0;
   color: #C4C4D4;
   font-size: 1.15rem;
   font-style: italic;
@@ -372,7 +370,7 @@ h1.post-title {
 #post-wrapper .post-content code {
   font-size: 0.875rem;
   background: #1E1E32;
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 2px 7px;
   color: #CE93D8;
   border: 1px solid #2A2A3E;
@@ -381,7 +379,7 @@ h1.post-title {
 #post-wrapper .post-content pre {
   background: #1A1A2E;
   border: 1px solid #2A2A3E;
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 1.2rem;
   overflow-x: auto;
 }
@@ -415,7 +413,7 @@ h1.post-title {
 
 /* ── Images in posts ── */
 #post-wrapper .post-content img {
-  border-radius: 8px;
+  border-radius: 14px;
   margin: 2rem auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   max-width: 100%;
@@ -460,7 +458,7 @@ h1.post-title {
 /* ── Mermaid diagrams ── */
 .mermaid {
   background: #1A1A2E;
-  border-radius: 12px;
+  border-radius: 18px;
   padding: 1.5rem;
   margin: 2rem 0;
   border: 1px solid #2A2A3E;
@@ -480,7 +478,7 @@ h1.post-title {
 .mermaid .edgeLabel {
   background: #1A1A2E !important;
   border: 1px solid #2A2A3E;
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 2px 8px;
   font-size: 12px;
 }
@@ -567,7 +565,7 @@ h1.post-title {
 .post-card .card-body {
   background: #1A1A2E;
   border: 1px solid #2A2A3E;
-  border-radius: 14px;
+  border-radius: 20px;
   padding: 1.75rem;
   transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
   position: relative;
@@ -646,41 +644,12 @@ h1.post-title {
   color: #BB86FC;
 }
 
-/* ── Search ── */
-#search-input {
-  background: #1A1A2E;
-  border: 1px solid #2A2A3E;
-  color: #E1E1EB;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-}
-
-#search-input:focus {
-  border-color: #BB86FC;
-  box-shadow: 0 0 0 3px rgba(187, 134, 252, 0.15);
-}
-
-#search-results a {
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-
-#search-results a:hover {
-  background: rgba(187, 134, 252, 0.08);
-}
-
-#search-hints {
-  color: #9A9AB0;
-  font-family: "Google Sans", sans-serif;
-  font-size: 0.8rem;
-}
-
 /* ── Pagination ── */
 .pagination a.page-link {
   background: #1A1A2E;
   border-color: #2A2A3E;
   color: #C4C4D4;
-  border-radius: 8px;
+  border-radius: 14px;
   margin: 0 2px;
   transition: all 0.2s;
 }
@@ -704,7 +673,7 @@ a.tag:hover {
   background: rgba(187, 134, 252, 0.12) !important;
   color: #BB86FC !important;
   border: 1px solid rgba(187, 134, 252, 0.2) !important;
-  border-radius: 6px;
+  border-radius: 10px;
   padding: 2px 10px;
   font-family: "Google Sans", sans-serif;
   font-size: 0.8rem;
@@ -727,7 +696,7 @@ a.tag:hover {
 
 ::-webkit-scrollbar-thumb {
   background: #2A2A3E;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -791,7 +760,7 @@ a.tag:hover {
   }
 
   .post-hero {
-    border-radius: 8px;
+    border-radius: 14px;
   }
 
   .post-card .card-body {
@@ -858,8 +827,7 @@ a.tag:hover {
     background-clip: text;
   }
 
-  #topbar #sidebar-trigger,
-  #topbar #search-trigger {
+  #topbar #sidebar-trigger {
     color: #4A4A5A;
   }
 
@@ -1070,12 +1038,6 @@ a.tag:hover {
   #panel-wrapper a:hover,
   #panel-wrapper a.active {
     color: #7C4DFF;
-  }
-
-  #search-input {
-    background: #FFFFFF;
-    border-color: #E0D8C8;
-    color: #2C2C3A;
   }
 
   .pagination a.page-link {
