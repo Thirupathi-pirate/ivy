@@ -151,11 +151,21 @@ layout: default
 {% endif %}
 
 <script>
-document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
-  card.addEventListener('click', function(e) {
-    if (e.target.closest('a')) return;
-    var link = card.querySelector('a[href]');
-    if (link) location.href = link.href;
+(function() {
+  // Clean up shimmer/loading artifacts on all article images
+  document.querySelectorAll('article img').forEach(function(img) {
+    if (img.complete) {
+      img.dispatchEvent(new Event('load'));
+    }
   });
-});
+
+  // Make entire card clickable (clicking text, not just image)
+  document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
+    card.addEventListener('click', function(e) {
+      if (e.target.closest('a')) return;
+      var link = card.querySelector('a[href]');
+      if (link) location.href = link.href;
+    });
+  });
+})();
 </script>
