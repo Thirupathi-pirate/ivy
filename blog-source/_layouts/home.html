@@ -151,19 +151,33 @@ layout: default
 {% endif %}
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-  // Clean up shimmer on images that loaded from cache before JS listeners attached
-  document.querySelectorAll('article img').forEach(function(img) {
-    if (img.complete) img.dispatchEvent(new Event('load'));
-  });
-
-  // Make entire card clickable
-  document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
-    card.addEventListener('click', function(e) {
-      if (e.target.closest('a')) return;
-      var link = card.querySelector('a[href]');
-      if (link) location.href = link.href;
+(function() {
+  function removeShimmer() {
+    document.querySelectorAll('.preview-img.shimmer, .preview-img.blur').forEach(function(w) {
+      var img = w.querySelector('img');
+      if (img && img.complete) w.classList.remove('shimmer', 'blur');
     });
-  });
-});
+  }
+  function makeCardsClickable() {
+    document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        if (e.target.closest('a')) return;
+        var link = card.querySelector('a[href]');
+        if (link) location.href = link.href;
+      });
+    });
+  }
+  if (document.readyState === 'complete') {
+    removeShimmer();
+    makeCardsClickable();
+  } else {
+    document.addEventListener('DOMContentLoaded', function() {
+      removeShimmer();
+      makeCardsClickable();
+    });
+    window.addEventListener('load', function() {
+      removeShimmer();
+    });
+  }
+})();
 </script>
