@@ -107,40 +107,38 @@ layout: default
         {% endif %}
 
         <div class="col-md-{{ card_body_col }}">
-          <div class="card-body d-flex flex-column p-0 border-0" style="background:transparent;">
-            <a href="{{ post.url | relative_url }}" class="text-decoration-none">
-              <div class="p-3" style="background:#1A1A2E;border:1px solid #2A2A3E;border-radius:14px;">
-                <h1 class="card-title my-2 mt-md-0" style="color:#FFFFFF;font-family:&quot;Raleway&quot;,sans-serif;font-weight:700;font-size:1.2rem;line-height:1.4;">{{ post.title }}</h1>
+          <div class="card-body d-flex flex-column">
+            <h1 class="card-title my-2 mt-md-0">
+              <a href="{{ post.url | relative_url }}">{{ post.title }}</a>
+            </h1>
 
-                <div class="card-text content mt-0 mb-3" style="color:#9A9AB0;font-size:0.95rem;line-height:1.6;">
-                  <p>{% include post-summary.html %}</p>
-                </div>
+            <div class="card-text content mt-0 mb-3">
+              <p>{% include post-summary.html %}</p>
+            </div>
 
-                <div class="post-meta flex-grow-1 d-flex align-items-end" style="font-size:0.8rem;color:#9A9AB0;text-transform:uppercase;letter-spacing:0.04em;">
-                  <div class="me-auto">
-                    <i class="far fa-calendar fa-fw me-1"></i>
-                    {% include datetime.html date=post.date lang=lang %}
+            <div class="post-meta flex-grow-1 d-flex align-items-end">
+              <div class="me-auto">
+                <i class="far fa-calendar fa-fw me-1"></i>
+                {% include datetime.html date=post.date lang=lang %}
 
-                    {% if post.categories.size > 0 %}
-                      <i class="far fa-folder-open fa-fw me-1"></i>
-                      <span class="categories">
-                        {% for category in post.categories %}
-                          {{ category }}
-                          {%- unless forloop.last -%},{%- endunless -%}
-                        {% endfor %}
-                      </span>
-                    {% endif %}
-                  </div>
-
-                  {% if post.pin %}
-                    <div class="pin ms-1">
-                      <i class="fas fa-thumbtack fa-fw"></i>
-                      <span>{{ site.data.locales[lang].post.pin_prompt }}</span>
-                    </div>
-                  {% endif %}
-                </div>
+                {% if post.categories.size > 0 %}
+                  <i class="far fa-folder-open fa-fw me-1"></i>
+                  <span class="categories">
+                    {% for category in post.categories %}
+                      {{ category }}
+                      {%- unless forloop.last -%},{%- endunless -%}
+                    {% endfor %}
+                  </span>
+                {% endif %}
               </div>
-            </a>
+
+              {% if post.pin %}
+                <div class="pin ms-1">
+                  <i class="fas fa-thumbtack fa-fw"></i>
+                  <span>{{ site.data.locales[lang].post.pin_prompt }}</span>
+                </div>
+              {% endif %}
+            </div>
           </div>
         </div>
       </div>
@@ -151,3 +149,13 @@ layout: default
 {% if paginator.total_pages > 1 %}
   {% include post-paginator.html %}
 {% endif %}
+
+<script>
+document.querySelectorAll('#post-list .post-preview').forEach(function(card) {
+  card.addEventListener('click', function(e) {
+    if (e.target.closest('a')) return;
+    var link = card.querySelector('a[href]');
+    if (link) location.href = link.href;
+  });
+});
+</script>
