@@ -19,13 +19,20 @@ writing_task:
 
     WRITING PHASE — Now write a comprehensive, in-depth blog post about "{topic}" that reads like a high-quality Medium article — detailed, insightful, and thoroughly researched.
 
+    ⚠️ WORD COUNT ENFORCEMENT — THIS IS CRITICAL:
     The post MUST be at least 2500 words long (targeting 14 minutes read time).
-    Do NOT stop writing until you have written at least 2500 words.
+    STRICTLY follow this structure to reach the word count:
+    - Introduction: ~250 words (hook + context + thesis)
+    - 8 sections: ~300 words each (= 2400 words)
+    - Conclusion: ~150 words
+    - Total: ~2800 words (buffer over the 2500 minimum)
+    DO NOT stop writing until you have written at least 2500 words.
+    When you think you are done, COUNT the number of words. If below 2500, KEEP WRITING.
 
     The post should:
     - Open with a strong, engaging hook that draws the reader in
     - Weave real facts, statistics, quotes, and data throughout — each with inline source links
-    - Include 6-8 well-developed sections with clear subheadings (each section 250-350 words)
+    - Include 8 well-developed sections with clear subheadings (each section ~300 words)
     - Use specific examples, case studies, and real user perspectives from your research
     - End with a thoughtful conclusion that ties everything together
     - Use clean markdown formatting
@@ -43,19 +50,22 @@ writing_task:
       For example, use a flow diagram to show a process, a pie chart for data breakdowns, or a sequence diagram for timelines
     - Add a horizontal rule (---) between major sections for visual separation
     - Use numbered lists for step-by-step processes
+    - Do NOT use LaTeX math syntax ($...$, $$...$$, \(...\), \[...\], \text, \rightarrow, etc.) — the blog theme does not render LaTeX. Use plain text or Unicode symbols instead. For example, write "→" or "->" instead of \\rightarrow, and write plain words instead of \\text.
 
     SELF-VERIFICATION (do this BEFORE finishing):
     - Re-read every claim. Does each one have a source URL?
     - Are all statistics backed by real data from your research?
     - Are all quotes attributed to real people or sources?
-    - Is every section substantive (250-350 words)?
+    - COUNT the total number of words. Is it at least 2500? If NOT, go back and expand each section by adding more details, examples, and analysis until you reach the minimum.
 
     Make the post visually scannable and engaging. Think Medium meets a modern tech blog.
   expected_output: >
     A well-researched, comprehensive blog post in rich markdown format
-    that is AT LEAST 2500 words long. Includes emoji headers, bold stats,
+    that is AT LEAST 2500 words long (measured by word count, not character count).
+    Has 8 sections plus intro and conclusion. Includes emoji headers, bold stats,
     bullet lists, blockquotes, a mermaid diagram, and inline source links.
     EVERY claim is traceable to a verifiable source. No fabricated data.
+    If the post is shorter than 2500 words, the task is considered FAILED.
   agent: writer
 
 humanising_task:
@@ -70,7 +80,7 @@ humanising_task:
     - Keep ALL facts, data, and source attributions intact — do not remove citations
     - Do NOT add fabricated anecdotes, fake user quotes, or imaginary examples
     - Do NOT soften real user perspectives from Reddit/HN into generic statements
-    - If something seems unsourced or unverifiable, FLAG it with [UNVERIFIED] rather than inventing support
+    - If something seems unsourced or unverifiable, REMOVE the claim entirely — do NOT add [UNVERIFIED] markers
     - PRESERVE all markdown formatting: emoji, bold, bullet lists, blockquotes, mermaid code blocks, horizontal rules, and links
 
     Think: warm, clear, human — but honest, authentic, and truthful.
@@ -92,15 +102,16 @@ editing_task:
 
     FACT-CHECKING:
     - Verify that every statistic, quote, and claim has a corresponding source link
-    - If a claim appears unsupported, flag it with [UNVERIFIED: needs source]
+    - If a claim cannot be verified: either add the missing source, rephrase as a general observation, or remove it entirely
     - If a statistic looks suspicious or cannot be verified, remove it
     - Ensure all inline links use correct markdown format: [text](url)
     - Ensure all mermaid code blocks, emoji, and special formatting are correctly formed
 
+    CRITICAL: The final output must be publication-ready. Do NOT leave [UNVERIFIED] or any editor markers in the text. Every claim must either have a source or be removed/rephrased.
     Do NOT strip any visual formatting. Do NOT add fabricated support for weak claims.
   expected_output: >
     A polished, publication-ready blog post in rich markdown format,
     clean and professional while keeping the natural human tone and
     all visual elements (emoji, mermaid, lists, blockquotes, links).
-    Every claim is either sourced or flagged. No fabricated data.
+    Every claim is properly sourced. No [UNVERIFIED] markers or editor artifacts.
   agent: editor
