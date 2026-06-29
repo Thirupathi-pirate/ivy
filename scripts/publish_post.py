@@ -151,7 +151,9 @@ def main():
     slug = slugify(topic)
     today = datetime.now().strftime("%Y-%m-%d")
 
-    images = fetch_unsplash_images(topic)
+    # Short query for Unsplash — first 3 meaningful words
+    query = " ".join(topic.split()[:3])
+    images = fetch_unsplash_images(query)
     cover = images[0] if len(images) > 0 else None
     inline_img = images[1] if len(images) > 1 and images[1]["path"] != images[0]["path"] else None
 

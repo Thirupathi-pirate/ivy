@@ -1,11 +1,17 @@
 ---
 layout: post
-title: "📱 The Immortal Budget King: Why the Redmi Note 5 Pro is Still Loved in 2026"
-date: 2026-06-29 04:54:00 +0000
+title: "📱 The Immortal Mid-Ranger: Why the Redmi Note 5 Pro is Still Loved in 2026"
+date: 2026-06-29 10:50:33 +0530
 toc: true
 mermaid: true
 description: >-
-  These days, it feels like phones are designed to give up on us. Between "planned obsolescence"—where devices start lagging after two years—and batteri
+  Imagine it's January 2026. We're living in a world of screens that fold in half, AI processors that practically think for us, and phones that cost as 
+image:
+  path: "https://images.unsplash.com/photo-1773408400448-8e8a3c119ba8?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHx3aHklMjByZWRtaSUyMG5vdGV8ZW58MHwwfHx8MTc4MjcxMDQzMnww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
+  alt: "Purple smartphone with dual camera and fingerprint sensor"
+  photographer: "Brandon Prajogo"
+  photographer_url: "https://unsplash.com/@brandonprajogo"
+  unsplash_url: "https://unsplash.com/photos/purple-smartphone-with-dual-camera-and-fingerprint-sensor-5_5LhgmciOo"
 ---
 
 These days, it feels like phones are designed to give up on us. Between "planned obsolescence"—where devices start lagging after two years—and batteries that are glued shut so you can't fix them, most phones have a short shelf life. But then there's this one weird exception. 
@@ -20,7 +26,12 @@ It's not just one thing. It's a mix of great build quality, a developer communit
 
 ## 🏗️ The Hardware Fortress: Built to Last, Not to be Replaced
 
-To get why the Note 5 Pro is still around, you have to look at how phones were made back in 2018. Unlike the plastic "sandwich" feel of a lot of today's budget phones, the Note 5 Pro has a **premium aluminum chassis**. In 2026, that doesn't feel "old"—it feels like a luxury.
+<div class="post-hero">
+  <img src="https://images.unsplash.com/photo-1756575433582-130db85552a4?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHx3aHklMjByZWRtaSUyMG5vdGV8ZW58MHwwfHx8MTc4MjcxMDQzMnww&ixlib=rb-4.1.0&fm=webp&w=780&h=440&fit=crop" alt="Hand holding a smartphone displaying xiaomi hyperos information." loading="lazy" width="780" height="440" data-unsplash-dl="https://api.unsplash.com/photos/OWoykBnLCJw/download?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHx3aHklMjByZWRtaSUyMG5vdGV8ZW58MHwwfHx8MTc4MjcxMDQzMnww" />
+  <div class="post-hero-credit">📸 <a href="https://unsplash.com/@zelebb">Andrey Matveev</a> on <a href="https://unsplash.com/photos/hand-holding-a-smartphone-displaying-xiaomi-hyperos-information-OWoykBnLCJw">Unsplash</a></div>
+</div>
+
+To understand why the Redmi Note 5 Pro (or simply the Redmi Note 5 in some markets) is still around in 2026, you have to look at how it was built. When it launched in 2018, it wasn't trying to be the fastest phone on the block; it was trying to be the best deal available.
 
 Modern budget phones often feel hollow or a bit fragile, but the Note 5 Pro is just solid. Over on [Reddit](https://www.reddit.com/r/Xiaomi/comments/kzqbia/xiaomiredmi_note_5_pro_appreciation_post), people have shared stories of the phone surviving **second-story drops** without the frame cracking or the software glitching. That durability is a huge part of why people still have them; it's hard to love a phone that shatters the first time it hits the sidewalk.
 
