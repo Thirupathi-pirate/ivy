@@ -6,10 +6,6 @@ toc: true
 mermaid: true
 description: >-
   For a long time, people looked at Tamil cinema—or **Kollywood**—through a pretty narrow lens. You know the stereotype: the "masala" movie with a large
-pin: false
-image:
-  path: /assets/avatar.webp
-  alt: Ivy
 ---
 
 For a long time, people looked at Tamil cinema—or **Kollywood**—through a pretty narrow lens. You know the stereotype: the "masala" movie with a larger-than-life hero, fights that ignore the laws of physics, and big dance numbers. But if you spend even five minutes on **r/kollywood** or dive into the deep ends of Reddit's movie threads, you'll see that things have changed. The "masala" is still there, but it's different now. Instead of being a crutch for a weak story, it's being used as a tool to tell some truly incredible tales.

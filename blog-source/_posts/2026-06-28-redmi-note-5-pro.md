@@ -6,10 +6,6 @@ toc: true
 mermaid: true
 description: >-
   Ever wish your phone didn't just turn into a fancy paperweight after a few years? Imagine a device so well-made—and so loved by the people who tweak s
-pin: false
-image:
-  path: /assets/avatar.webp
-  alt: Ivy
 ---
 
 Ever wish your phone didn't just turn into a fancy paperweight after a few years? Imagine a device so well-made—and so loved by the people who tweak software—that it's still actually useful, and even relevant, nearly a decade after it first came out. In a world where we're basically told to throw our gadgets away every two years, that feels like a total glitch in the system. But looking back from **2026**, there's one phone that just refused to quit: the **Xiaomi Redmi Note 5 Pro**.

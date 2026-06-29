@@ -99,10 +99,6 @@ def build_frontmatter(title: str, topic: str, description: str, unsplash: dict |
         lines.extend([
             "description: >-",
             f"  {description}",
-            "pin: false",
-            "image:",
-            "  path: /assets/avatar.webp",
-            "  alt: Ivy",
         ])
     lines.append("---")
     return "\n".join(lines)
