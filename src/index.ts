@@ -104,6 +104,14 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
   bot.api.config.use((prev, method, payload, signal) => prev(method, { ...payload, signal }));
 
+  // Auto-migrate stale model references in existing sessions
+  bot.use(async (ctx, next) => {
+    if (ctx.session && !MODELS.includes(ctx.session.model)) {
+      ctx.session.model = MODELS[0];
+    }
+    await next();
+  });
+
   // ---------- Commands ----------
 
   bot.command("start", async (ctx) => {
@@ -159,6 +167,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
   bot.command("new", async (ctx) => {
     ctx.session.history = [];
+    ctx.session.model = MODELS[0];
     await ctx.reply("New conversation started 💬");
   });
 

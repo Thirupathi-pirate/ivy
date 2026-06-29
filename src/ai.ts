@@ -833,7 +833,7 @@ async function callGroq(
   tools: any[],
   model: string
 ): Promise<
-  | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] } }> }
+  | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] }; finish_reason: string }> }
   | { _rateLimited: true; model: string }
   | { _retry: true }
 > {
@@ -948,7 +948,9 @@ async function processAiInternal(
         continue;
       }
 
-      const msg = (response as any).choices[0].message;
+      const choice = (response as any).choices[0];
+      const msg = choice.message;
+      const finishReason = choice.finish_reason;
 
       if (!msg.tool_calls) {
         // Check if the model output a raw JSON function call as text (fallback for models that don't support tool_calls properly)
@@ -961,6 +963,9 @@ async function processAiInternal(
           continue;
         }
         const text = content || "No response.";
+        if (finishReason === "length") {
+          console.warn(`[${model}] finish_reason=length — response may be truncated (${text.length} chars)`);
+        }
         await revealText(onStream, text);
         return { text, modelUsed: model };
       }
