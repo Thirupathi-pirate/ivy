@@ -44,6 +44,10 @@ def has_mermaid(content: str) -> bool:
     return "```mermaid" in content
 
 
+def has_latex(content: str) -> bool:
+    return bool(re.search(r"(?<!\w)\$[^$]+\$|\\\(|\\\[|\\\\text\{|\\\\rightarrow|\\\\sum|\\\\int|\\\\alpha|\\\\beta|\\\\gamma|\\\\delta|\\\\theta|\\\\lambda|\\\\mu|\\\\pi|\\\\sigma|\\\\omega|\\\\infty|\\\\partial|\\\\nabla", content))
+
+
 def fetch_unsplash_images(topic: str, count: int = 2) -> list:
     if not UNSPLASH_ACCESS_KEY:
         return []
@@ -78,12 +82,14 @@ def yaml_escape(s: str) -> str:
     """Escape double quotes in a YAML double-quoted string."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
-def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool) -> str:
+def build_frontmatter(title: str, topic: str, description: str, unsplash: dict | None, mermaid: bool, math: bool = False) -> str:
     now = datetime.now().astimezone()
     date = now.strftime("%Y-%m-%d %H:%M:%S %z")
     lines = ["---", "layout: post", f'title: "{yaml_escape(title)}"', f"date: {date}", "toc: true"]
     if mermaid:
         lines.append("mermaid: true")
+    if math:
+        lines.append("math: true")
     if unsplash:
         lines.extend([
             "description: >-",
@@ -158,8 +164,9 @@ def main():
     inline_img = images[1] if len(images) > 1 and images[1]["path"] != images[0]["path"] else None
 
     mermaid = has_mermaid(content)
+    math = has_latex(content)
 
-    frontmatter = build_frontmatter(title, topic, desc, cover, mermaid)
+    frontmatter = build_frontmatter(title, topic, desc, cover, mermaid, math)
     body = re.sub(r"^# .+\n?", "", content, count=1).strip()
     # Insert inline image inside the first content section
     if inline_img:
@@ -180,6 +187,8 @@ def main():
         print(f"Inline: {inline_img['path']}")
     if mermaid:
         print("Mermaid: true")
+    if math:
+        print("Math: true")
 
 
 if __name__ == "__main__":

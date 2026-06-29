@@ -19,6 +19,8 @@ writing_task:
 
     WRITING PHASE — Now write a comprehensive, in-depth blog post about "{topic}" that reads like a high-quality Medium article — detailed, insightful, and thoroughly researched.
 
+    ⚠️ YOU MUST FOLLOW EVERY RULE BELOW EXACTLY. DO NOT SKIP, IGNORE, OR PARTIALLY FOLLOW ANY INSTRUCTION. FAILURE TO FOLLOW ANY RULE WILL RESULT IN THE TASK BEING MARKED AS FAILED.
+
     ⚠️ WORD COUNT ENFORCEMENT — THIS IS CRITICAL:
     The post MUST be at least 2500 words long (targeting 14 minutes read time).
     STRICTLY follow this structure to reach the word count:
@@ -50,7 +52,7 @@ writing_task:
       For example, use a flow diagram to show a process, a pie chart for data breakdowns, or a sequence diagram for timelines
     - Add a horizontal rule (---) between major sections for visual separation
     - Use numbered lists for step-by-step processes
-    - Do NOT use LaTeX math syntax ($...$, $$...$$, \(...\), \[...\], \text, \rightarrow, etc.) — the blog theme does not render LaTeX. Use plain text or Unicode symbols instead. For example, write "→" or "->" instead of \\rightarrow, and write plain words instead of \\text.
+    - LaTeX math ($...$, $$...$$, \(...\), \[...\], \text, \rightarrow, etc.) is SUPPORTED by the blog theme via MathJax. Use it freely for formulas, symbols, and technical notation.
 
     SELF-VERIFICATION (do this BEFORE finishing):
     - Re-read every claim. Does each one have a source URL?
