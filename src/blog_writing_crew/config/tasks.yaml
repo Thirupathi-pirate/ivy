@@ -1,39 +1,61 @@
 writing_task:
   description: >
-    Use the news_search tool to research "{topic}" for the year {current_year}.
-    Then write a comprehensive, in-depth blog post about "{topic}" that reads
-    like a high-quality Medium article — detailed, insightful, and thoroughly researched.
+    RESEARCH PHASE — Use ALL your available tools to gather information about "{topic}" for the year {current_year}:
 
-    The post MUST be at least 2200 words long (targeting 12 minutes read time).
-    Do NOT stop writing until you have written at least 2200 words.
+    1. news_search: Search for "{topic} {current_year}" and "reddit {topic}" and "site:reddit.com {topic}" to find web articles AND real Reddit discussions
+    2. wikipedia_search: Search for "{topic}" on Wikipedia for factual background, definitions, and key statistics
+    3. hackernews_search: Search for "{topic}" on Hacker News for tech community perspectives and discussions
+    4. arxiv_search: Search for "{topic}" on ArXiv for academic papers and research findings
+    5. openlibrary_search: Search for "{topic}" on Open Library for books and author references
+    6. rss_feed: If you find a relevant blog or publication in your searches, use rss_feed with its feed URL to get the latest articles
+
+    For each tool you use, note the SOURCE URLs of every article, discussion, paper, or book. Collect as many verifiable sources as possible.
+
+    TRUTHFULNESS RULES:
+    - NEVER fabricate statistics, quotes, or data. Every claim MUST trace back to a source you found.
+    - If you cannot find a specific statistic, do not invent one — say "according to available sources" or omit it.
+    - Real user quotes from Reddit and HN are valuable — use them, but attribute them properly.
+    - If a source is behind a paywall or inaccessible, note that and do not fabricate its content.
+
+    WRITING PHASE — Now write a comprehensive, in-depth blog post about "{topic}" that reads like a high-quality Medium article — detailed, insightful, and thoroughly researched.
+
+    The post MUST be at least 2500 words long (targeting 14 minutes read time).
+    Do NOT stop writing until you have written at least 2500 words.
 
     The post should:
-    - Open with a strong, engaging hook
-    - Weave real facts, statistics, quotes, and data throughout
+    - Open with a strong, engaging hook that draws the reader in
+    - Weave real facts, statistics, quotes, and data throughout — each with inline source links
     - Include 6-8 well-developed sections with clear subheadings (each section 250-350 words)
-    - Use specific examples and case studies from the research
+    - Use specific examples, case studies, and real user perspectives from your research
     - End with a thoughtful conclusion that ties everything together
     - Use clean markdown formatting
+    - Include inline markdown links to sources using [text](url) format throughout the body
 
     VISUAL FORMATTING REQUIREMENTS:
     - Use relevant emoji at the start of each section header (e.g., 🚀 for future topics, 🔬 for science, 📊 for data, 💡 for insights, 🌍 for global topics, 🎯 for trends, 🤖 for AI/tech, 📈 for growth)
     - Use **bold** for key statistics and important terms
     - Include brief bullet lists (with hyphens) when comparing points or listing items
-    - Use blockquotes (with > ) for important quotes or key takeaways
+    - Use blockquotes (with > ) for important quotes, user perspectives, or key takeaways
     - Include a Mermaid diagram where appropriate — use fenced code blocks with the mermaid language tag:
       ```mermaid
       graph LR or graph TD for flowcharts
       ```
       For example, use a flow diagram to show a process, a pie chart for data breakdowns, or a sequence diagram for timelines
     - Add a horizontal rule (---) between major sections for visual separation
-    - Include inline markdown links to interesting sources using [text](url) format
     - Use numbered lists for step-by-step processes
+
+    SELF-VERIFICATION (do this BEFORE finishing):
+    - Re-read every claim. Does each one have a source URL?
+    - Are all statistics backed by real data from your research?
+    - Are all quotes attributed to real people or sources?
+    - Is every section substantive (250-350 words)?
 
     Make the post visually scannable and engaging. Think Medium meets a modern tech blog.
   expected_output: >
     A well-researched, comprehensive blog post in rich markdown format
-    that is AT LEAST 2200 words long. Includes emoji headers, bold stats,
-    bullet lists, blockquotes, a mermaid diagram, and source links.
+    that is AT LEAST 2500 words long. Includes emoji headers, bold stats,
+    bullet lists, blockquotes, a mermaid diagram, and inline source links.
+    EVERY claim is traceable to a verifiable source. No fabricated data.
   agent: writer
 
 humanising_task:
@@ -42,27 +64,43 @@ humanising_task:
     Remove all AI tone, corporate jargon, and formal language.
     Make it sound like a knowledgeable friend explaining the topic
     in a warm, conversational way. Use simple words, natural sentence
-    flow, and a friendly tone. Keep all the facts and data intact —
-    just change HOW it sounds. Think: warm, clear, human.
-    PRESERVE all markdown formatting: emoji, bold, bullet lists,
-    blockquotes, mermaid code blocks, horizontal rules, and links.
+    flow, and a friendly tone.
+
+    AUTHENTICITY RULES:
+    - Keep ALL facts, data, and source attributions intact — do not remove citations
+    - Do NOT add fabricated anecdotes, fake user quotes, or imaginary examples
+    - Do NOT soften real user perspectives from Reddit/HN into generic statements
+    - If something seems unsourced or unverifiable, FLAG it with [UNVERIFIED] rather than inventing support
+    - PRESERVE all markdown formatting: emoji, bold, bullet lists, blockquotes, mermaid code blocks, horizontal rules, and links
+
+    Think: warm, clear, human — but honest, authentic, and truthful.
   expected_output: >
     The same blog post rewritten in a natural, conversational, human tone.
-    All key facts, data, and markdown formatting preserved.
+    All key facts, data, source citations, and markdown formatting preserved.
+    No fabricated content added.
   agent: humaniser
 
 editing_task:
   description: >
-    Review the humanised blog post for:
+    Review the humanised blog post for two categories of issues:
+
+    FORMAT & STYLE:
     - Grammar, spelling, and punctuation
     - Markdown formatting issues
     - Clarity and readability
     - Consistent tone (preserve the natural human voice)
-    Make any necessary fixes and return the final polished version.
-    Ensure all mermaid code blocks, emoji, and special formatting
-    are correctly formed. Do NOT strip any visual formatting.
+
+    FACT-CHECKING:
+    - Verify that every statistic, quote, and claim has a corresponding source link
+    - If a claim appears unsupported, flag it with [UNVERIFIED: needs source]
+    - If a statistic looks suspicious or cannot be verified, remove it
+    - Ensure all inline links use correct markdown format: [text](url)
+    - Ensure all mermaid code blocks, emoji, and special formatting are correctly formed
+
+    Do NOT strip any visual formatting. Do NOT add fabricated support for weak claims.
   expected_output: >
     A polished, publication-ready blog post in rich markdown format,
     clean and professional while keeping the natural human tone and
     all visual elements (emoji, mermaid, lists, blockquotes, links).
+    Every claim is either sourced or flagged. No fabricated data.
   agent: editor

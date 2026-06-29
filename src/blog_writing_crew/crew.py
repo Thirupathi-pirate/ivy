@@ -1,6 +1,13 @@
 from crewai import Agent, Crew, LLM, Process, Task
 from crewai.project import CrewBase, agent, crew, task
-from blog_writing_crew.tools.custom_tool import NewsSearchTool
+from blog_writing_crew.tools.custom_tool import (
+    NewsSearchTool,
+    WikipediaSearchTool,
+    HackerNewsSearchTool,
+    ArXivSearchTool,
+    OpenLibrarySearchTool,
+    RSSFeedTool,
+)
 
 try:
     from crewai.agents.agent_builder.base_agent import BaseAgent
@@ -20,13 +27,20 @@ class BlogWritingCrew():
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    _llm = LLM(model="google/gemma-4-31b-it", max_tokens=16384)
+    _llm = LLM(model="google/gemma-4-31b-it", max_tokens=16384, timeout=300)
 
     @agent
     def writer(self) -> Agent:
         return Agent(
             config=self.agents_config["writer"],  # type: ignore[index]
-            tools=[NewsSearchTool()],
+            tools=[
+                NewsSearchTool(),
+                WikipediaSearchTool(),
+                HackerNewsSearchTool(),
+                ArXivSearchTool(),
+                OpenLibrarySearchTool(),
+                RSSFeedTool(),
+            ],
             llm=self._llm,
             verbose=True,
         )
@@ -51,6 +65,7 @@ class BlogWritingCrew():
     def writing_task(self) -> Task:
         return Task(
             config=self.tasks_config["writing_task"],  # type: ignore[index]
+            timeout=900,
         )
 
     @task
@@ -58,6 +73,7 @@ class BlogWritingCrew():
         return Task(
             config=self.tasks_config["humanising_task"],  # type: ignore[index]
             context=[self.writing_task()],
+            timeout=600,
         )
 
     @task
@@ -65,6 +81,7 @@ class BlogWritingCrew():
         return Task(
             config=self.tasks_config["editing_task"],  # type: ignore[index]
             context=[self.humanising_task()],
+            timeout=1200,
         )
 
     @crew
