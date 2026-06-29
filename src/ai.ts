@@ -822,9 +822,9 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
 // ===================== Groq API Call =====================
 
 const MODEL_MAX_TOKENS: Record<string, number> = {
-  "meta-llama/llama-4-scout-17b-16e-instruct": 32768,
+  "meta-llama/llama-4-scout-17b-16e-instruct": 8192,
   "llama-3.3-70b-versatile": 32768,
-  "llama-3.1-8b-instant": 131072,
+  "llama-3.1-8b-instant": 8192,
 };
 
 async function callGroq(
