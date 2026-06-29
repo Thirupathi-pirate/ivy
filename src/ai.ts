@@ -848,7 +848,7 @@ async function callGroq(
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (resp.status === 429) return { _rateLimited: true, model };
+  if (resp.status === 429 || resp.status === 413) return { _rateLimited: true, model };
   if (!resp.ok) {
     const err = await resp.text();
     if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) return { _retry: true };
