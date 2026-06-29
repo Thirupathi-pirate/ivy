@@ -10,7 +10,7 @@
       "label": "Primary",
       "provider": "groq",
       "model": "llama-3.3-70b-versatile",
-      "maxTokens": 8192,
+      "maxTokens": 32768,
       "contextWindowTokens": 131072,
       "temperature": 0.7
     }
