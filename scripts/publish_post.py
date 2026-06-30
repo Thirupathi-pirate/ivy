@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Convert crew output to Jekyll post and deploy."""
 
+import argparse
 import os
 import re
 import sys
@@ -145,7 +146,10 @@ def insert_inline_image(content: str, img: dict | None) -> str:
 
 
 def main():
-    topic = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TOPIC", "The Future of AI Agents")
+    parser = argparse.ArgumentParser(description="Convert crew output to Jekyll post and deploy.")
+    parser.add_argument("topic", nargs="?", default=None, help="Blog topic for Unsplash search")
+    args = parser.parse_args()
+    topic = args.topic if args.topic else os.environ.get("TOPIC", "The Future of AI Agents")
 
     if not BLOG_POST.exists():
         print(f"Error: {BLOG_POST} not found")

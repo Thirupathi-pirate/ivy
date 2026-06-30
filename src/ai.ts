@@ -1101,7 +1101,10 @@ async function processAiInternal(
     for (let turn = 0; turn < maxDepth; turn++) {
       const isGeminiModel = isGemini(model);
       const apiKey = isGeminiModel ? env.GEMINI_API_KEY : env.GROQ_API_KEY;
-      if (!apiKey) continue;
+      if (!apiKey) {
+        console.warn(`[${model}] API key not configured, skipping`);
+        continue;
+      }
 
       const response = isGeminiModel
         ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)

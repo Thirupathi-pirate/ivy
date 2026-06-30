@@ -249,8 +249,6 @@ class ArXivSearchTool(BaseTool):
                     name_el = author_el.find("atom:name", ns)
                     if name_el is not None and name_el.text:
                         authors.append(name_el.text.strip())
-                    elif name_el is not None and name_el.text:
-                        authors.append(name_el.text.strip())
                 author_str = ", ".join(authors) if authors else "Unknown"
 
                 output.append(f"### {i}. {title}")

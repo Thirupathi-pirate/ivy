@@ -1103,7 +1103,7 @@ async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContex
   try {
     const results = await env.IVY_DB.prepare(
       "SELECT id, chat_id, timestamp, message FROM reminders WHERE timestamp <= ?"
-    ).bind(now).all<{ id: string; chat_id: number; timestamp: number; message: string }>();
+    ).bind(now).all<{ id: string; chat_id: string; timestamp: number; message: string }>();
     for (const row of results.results || []) {
       try {
         const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
