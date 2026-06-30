@@ -1,168 +1,194 @@
-# Ivy — AI Blog Bot
+<div align="center">
+  <img src="blog-source/assets/avatar.webp" width="120" height="120" style="border-radius:50%; border: 3px solid #BB86FC;" alt="Ivy Logo"/>
+  <h1 align="center">🌿 Ivy</h1>
+  <p align="center">
+    <b>AI Blog Bot</b> — Telegram assistant + automated blog writer
+    <br />
+    <i>Research. Write. Publish. All on autopilot.</i>
+  </p>
 
-Telegram bot that writes and publishes blog posts automatically. Powered by CrewAI for research-backed content, Jekyll/Chirpy for hosting, and a Cloudflare Worker for real-time chat.
+  <p>
+    <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
+    <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" alt="Python"/>
+    <img src="https://img.shields.io/badge/Cloudflare-F38020?style=flat&logo=cloudflare&logoColor=white" alt="Cloudflare"/>
+    <img src="https://img.shields.io/badge/Gemini-8E75FF?style=flat&logo=googlegemini&logoColor=white" alt="Gemini"/>
+    <img src="https://img.shields.io/badge/CrewAI-FF6B6B?style=flat&logo=crewai&logoColor=white" alt="CrewAI"/>
+    <img src="https://img.shields.io/badge/Jekyll-CC0000?style=flat&logo=jekyll&logoColor=white" alt="Jekyll"/>
+    <img src="https://img.shields.io/badge/D1-003B5C?style=flat&logo=cloudflare&logoColor=white" alt="D1"/>
+  </p>
+</div>
 
-## Features
+---
 
-### AI Chat (Ivy)
-Warm, friendly AI assistant with a tool loop for research, productivity, and entertainment. Ivy can search the web, remember facts across conversations, set reminders, fetch URLs, discover movies, analyze images, transcribe voice, and read PDFs. Runs on a 3-model Gemini fallback chain.
+## ✨ What Ivy Does
 
-### Automated Blog Writing
-3x daily scheduled posts via GitHub Actions — tech topic at 5:50 AM IST, general topics at 10 AM and 5:30 PM IST. Each run auto-discovers a trending topic, sends it through the CrewAI pipeline (research → writing → humanising → editing), fetches Unsplash cover images, publishes to the Jekyll blog, and notifies you on Telegram.
+Ivy is a Telegram bot that chats like a friend, remembers everything, and writes blog posts for you — on autopilot.
 
-### Manual Blog Writing
-`/write <topic>` dispatches the same CrewAI pipeline on demand. Perfect for timely content or specific topics you want covered.
+| | Capability | How It Works |
+|---|-----------|-------------|
+| 💬 | **AI Chat** | Web search, reminders, memory, image/voice/PDF analysis, movie discovery |
+| 📝 | **Auto Blogging** | 3x daily — discovers trending topics, researches, writes, publishes |
+| 🧠 | **Long-Term Memory** | Remembers facts across conversations (D1-backed) |
+| ⏰ | **Reminders** | "Remind me at 2:30 PM to call mom" — cron-delivered |
+| 🔍 | **Trending Topics** | News API + Tavily finds what's hot — no manual input needed |
+| 🎬 | **Movies** | TMDB + Reddit + Tavily multi-source recommendations |
+| 📸 | **Vision** | Describe photos, transcribe voice, read PDFs & documents |
 
-### Trending Topic Discovery
-No topic required for scheduled runs. The system queries News API and Tavily to find what's trending — tech keywords for the morning slot, general headlines for afternoon slots.
+---
 
-### Long-Term Memory
-Ivy remembers facts, preferences, and personal details you share. Saved to D1, loaded automatically every conversation. Use `/forget` to clear everything.
-
-### Smart Reminders
-Natural language scheduling — "remind me at 14:30 to call mom" or "remind me tomorrow at 9am". D1-backed, delivered by the Worker's `* * * * *` cron. List and cancel reminders on demand.
-
-### Image Analysis
-Send any photo — Ivy describes objects, colors, composition, mood, and text visible. Powered by Gemini's vision capabilities.
-
-### Voice Transcription
-Send a voice message — transcribed via Groq Whisper, then Ivy processes the text as a normal chat message.
-
-### Document Reading
-Send PDFs or text files (TXT, CSV, JSON, code files, etc.). Ivy extracts and reads the content. PDFs are parsed for metadata and uncompressed text.
-
-### Movie Discovery
-Multi-source movie recommendations via TMDB (ratings, cast, similar titles), Reddit (real community discussions), and Tavily (Reddit-targeted web search). Ask for movies by genre, mood, or title.
-
-### LaTeX & Mermaid Rendering
-Inline `$$...$$` formulas render as images via QuickLaTeX. ` ```mermaid ` code blocks render as PNG via mermaid.ink. The blog theme also supports MathJax and native Mermaid.
-
-## Architecture
+## 🏗️ Architecture
 
 ```
-Telegram → Cloudflare Worker (Hono + grammY) → Gemini API (chat, tool loop)
-                                                  → D1 (sessions, memories, reminders)
-                                                  → GitHub Actions dispatch (/write)
-                                                     → CrewAI pipeline → Jekyll build → gh-pages
+                    ┌──────────────────────────────────────┐
+  Telegram ──────── │  Cloudflare Worker (Hono + grammY)   │
+                    │                                      │
+                    │  ┌──────────────────────────────────┐ │
+                    │  │        Gemini API                │ │
+                    │  │  (3-model fallback chain)        │ │
+                    │  └──────┬───────────────────────────┘ │
+                    │         │                             │
+                    │  ┌──────▼──────────┐  ┌────────────┐ │
+                    │  │  D1 Database   │  │  GPT Chat  │ │
+                    │  │ sessions       │  │  Loop      │ │
+                    │  │ memories       │  │  (tools)   │ │
+                    │  │ reminders      │  └────────────┘ │
+                    │  └───────────────┘                  │
+                    └──────────┬───────────────────────────┘
+                               │
+                    ┌──────────▼───────────────────────────┐
+                    │  GitHub Actions Dispatch (/write)     │
+                    │                                      │
+                    │  ┌──────────┐ ┌───────────┐ ┌──────┐ │
+                    │  │ Writer   │→│ Humaniser │→│Editor│ │
+                    │  │(research)│ │(rewrite)  │ │(polish)│
+                    │  └──────────┘ └───────────┘ └──────┘ │
+                    │          CrewAI Pipeline              │
+                    └──────────┬───────────────────────────┘
+                               │
+                    ┌──────────▼───────────────────────────┐
+                    │  Jekyll Build → GitHub Pages         │
+                    │  Telegram Notification                │
+                    └──────────────────────────────────────┘
 ```
 
-## Quick Start
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 20+
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (`pip install uv`)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
-
-### 1. Clone & install
-```bash
-git clone https://github.com/Thirupathi-pirate/ivy.git
-cd ivy
-uv sync                    # Python deps (CrewAI blog writer)
-npm install                # TypeScript deps (Cloudflare Worker)
+```
+Node.js 20+  │  Python 3.10+  │  uv (pip install uv)  │  Wrangler CLI
 ```
 
-### 2. Environment variables
-Copy `.env.example` (or use the committed `.env`) and ensure these keys are set:
+### 1. Clone & Install
+```bash
+git clone https://github.com/Thirupathi-pirate/ivy.git && cd ivy
+uv sync              # Python deps (CrewAI)
+npm install          # TypeScript deps (Worker)
+```
 
-| Variable | Required | Used For |
-|----------|----------|----------|
-| `TELEGRAM_BOT_TOKEN` | Yes | Telegram bot auth |
-| `GEMINI_API_KEY` | Yes | AI chat + crew LLM |
-| `GROQ_API_KEY` | Yes | Voice transcription |
-| `TAVILY_API_KEY` | Yes | Web search tool |
-| `GITHUB_PAT` | Yes | GitHub Actions dispatch |
-| `GITHUB_REPO` | Yes | e.g. `Thirupathi-pirate/ivy` |
-| `UNSPLASH_ACCESS_KEY` | Yes | Blog cover images |
-| `NEWS_API_KEY` | Yes | Trending topic discovery |
+### 2. Environment Variables
+Set these in `.env`:
 
-Optional: `TMDB_API_KEY`, `REDDIT_CLIENT_ID`/`REDDIT_CLIENT_SECRET`/`REDDIT_USER_AGENT` for enhanced movie tools.
+| Variable | Why It's Needed |
+|----------|----------------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot authentication |
+| `GEMINI_API_KEY` | Powers the AI brain + CrewAI writer |
+| `GROQ_API_KEY` | Voice transcription (Whisper) |
+| `TAVILY_API_KEY` | Web search tool for research |
+| `GITHUB_PAT` | Triggers blog publishing workflow |
+| `GITHUB_REPO` | e.g. `Thirupathi-pirate/ivy` |
+| `UNSPLASH_ACCESS_KEY` | Fetches blog cover images |
+| `NEWS_API_KEY` | Trending topic discovery |
+
+><sub>Optional: `TMDB_API_KEY`, `REDDIT_CLIENT_ID/SECRET/USER_AGENT` for enhanced movie tools.</sub>
 
 ### 3. Deploy the Worker
 ```bash
 npm run deploy
 ```
-Visit `https://your-worker.workers.dev/init` to create D1 tables.
-Visit `https://your-worker.workers.dev/?command=set` to register the Telegram webhook.
 
-## Usage
+Then visit:
+- `https://your-worker.workers.dev/init` — creates D1 tables
+- `https://your-worker.workers.dev/?command=set` — registers Telegram webhook
 
-### Telegram
-| Command | Action |
-|---------|--------|
-| `/start` | Welcome message |
-| `/write <topic>` | Generate and publish a blog post |
-| `/models` | Switch AI model (inline keyboard) |
-| `/model <name>` | Set model by name |
-| `/new` | Reset conversation |
-| `/clear` | Clear chat history |
-| `/redo` | Re-send last message |
-| `/redo <text>` | Re-send with edited text |
-| `/forget` | Clear memories + reset |
-| `/system` | View status |
-| `/help` | All commands |
+---
 
-Send photos, voice messages, PDFs, or text documents for analysis. In groups, mention `@IvyBot` or reply to Ivy's messages.
+## 📱 Telegram Commands
 
-### Running the Blog Writer Locally
-```bash
-TOPIC="Your blog topic" uv run crewai run
-uv run python scripts/publish_post.py "Your blog topic"
+| Command | What It Does |
+|---------|--------------|
+| `/start` | 👋 Welcome message |
+| `/write <topic>` | ✍️ Generate & publish a blog post |
+| `/models` | 🔄 Switch AI model (inline menu) |
+| `/model <name>` | 🎯 Set model directly |
+| `/new` | 🆕 Reset conversation |
+| `/clear` | 🧹 Clear chat history |
+| `/redo` | ↩️ Re-send last message |
+| `/forget` | 🗑️ Wipe memories + reset |
+| `/system` | 📊 Bot status |
+| `/help` | ❓ All commands |
+
+><sub>Send 📸 photos, 🎤 voice messages, 📄 PDFs for analysis. In groups, mention `@IvyBot`.</sub>
+
+---
+
+## 📅 Publishing Schedule
+
+| Time (IST) | Type | Topic Source |
+|------------|------|-------------|
+| 🌅 **5:50 AM** | Tech | News API + Tavily (filtered by 200+ tech keywords) |
+| ☀️ **10:00 AM** | General | News API top headlines + Tavily trending |
+| 🌆 **5:30 PM** | General | News API top headlines + Tavily trending |
+
+**Pipeline:** Find topic → CrewAI writes (≥2500 words) → Unsplash images → Jekyll post → Deploy → Telegram notification
+
+Manual trigger: `/write <topic>` dispatches the same pipeline instantly.
+
+---
+
+## 🧰 Tech Stack
+
+```
+┌─ Bot Runtime ──── Cloudflare Workers (Hono + grammY)
+├─ AI Chat ──────── Google Gemini (gemini-2.5-flash-lite → gemini-2.5-flash → gemini-3.1-flash-lite)
+├─ Voice ────────── Groq Whisper (whisper-large-v3-turbo)
+├─ Web Search ───── Tavily API
+├─ Database ─────── Cloudflare D1 (SQLite) — sessions, memories, reminders
+├─ Blog Writer ──── CrewAI — 3 agents: Writer (research) → Humaniser (rewrite) → Editor (polish)
+├─ Blog Host ────── Jekyll + Chirpy 7.5 → GitHub Pages (Midnight Purple theme)
+├─ Trending ─────── News API + Tavily
+├─ Images ───────── Unsplash API
+└─ CI/CD ────────── GitHub Actions (3x daily cron + manual dispatch)
 ```
 
-### Finding Trending Topics
-```bash
-uv run python scripts/find_trending_topic.py --type tech
-uv run python scripts/find_trending_topic.py --type general
-```
+---
 
-## Scheduled Publishing
-
-The workflow runs 3x daily via GitHub Actions:
-- **5:50 AM IST** — Tech topic (auto-discovered from News API + Tavily)
-- **10:00 AM IST** — General topic
-- **5:30 PM IST** — General topic
-
-Manual trigger: `/write <topic>` on Telegram dispatches the same workflow.
-
-Publishing steps: topic discovery → CrewAI pipeline (writer → humaniser → editor) → Unsplash cover fetch → Jekyll frontmatter → commit to `blog-source/_posts/` → Jekyll build → deploy to GitHub Pages → Telegram notification.
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Bot runtime | Cloudflare Workers (Hono, grammY) |
-| AI chat | Google Gemini API (3-model fallback chain) |
-| Voice transcribe | Groq Whisper |
-| Web search | Tavily API |
-| Blog writing | CrewAI (3 agents: writer → humaniser → editor) |
-| Blog host | Jekyll + Chirpy 7.5, GitHub Pages |
-| Database | Cloudflare D1 (SQLite) |
-| Trending topics | News API + Tavily |
-| Images | Unsplash API |
-| CI/CD | GitHub Actions |
-
-## Project Structure
+## 📂 Project Structure
 
 ```
 src/
-  index.ts              — Hono app, bot handlers
-  ai.ts                 — Gemini API, tool loop, memory, movie tools
-  blog_writing_crew/    — CrewAI blog writer (agents, tasks, tools)
-    crew.py             — Agent/task definitions
-    main.py             — Entrypoints (run, train, replay, test)
-    config/
-      agents.yaml       — Agent roles & backstories
-      tasks.yaml        — Task descriptions & instructions
-    tools/
-      custom_tool.py    — Tavily, Wikipedia, HN, ArXiv, OpenLibrary, RSS
+├── index.ts                 🟦 Hono app, Telegram bot, admin routes
+├── ai.ts                    🧠 Gemini API, tool loop, memory, movies
+└── blog_writing_crew/       📝 CrewAI pipeline
+    ├── crew.py              Agent & task definitions
+    ├── main.py              Entrypoints (run / train / replay / test)
+    ├── config/
+    │   ├── agents.yaml      Agent roles & backstories
+    │   └── tasks.yaml       Task instructions
+    └── tools/
+        └── custom_tool.py   🔧 Tavily, Wikipedia, Hacker News, ArXiv, OpenLibrary, RSS
+
 scripts/
-  publish_post.py       — Unsplash cover + frontmatter → Jekyll post
-  find_trending_topic.py — Trending topic discovery (News API + Tavily)
-blog-source/            — Jekyll site (Chirpy theme, _posts/)
-.github/workflows/      — CI/CD pipelines
+├── publish_post.py          🖼️ Unsplash cover + frontmatter → Jekyll post
+└── find_trending_topic.py   🔍 Trending topic discovery (News API + Tavily)
+
+blog-source/                 📖 Jekyll site (Chirpy theme, _posts/)
+.github/workflows/           ⚙️ CI/CD pipelines
 ```
 
-## License
+---
 
-MIT
+## 📜 License
+
+MIT — use it, tweak it, ship it.
