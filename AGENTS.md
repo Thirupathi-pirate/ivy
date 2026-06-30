@@ -1,117 +1,162 @@
-# AGENTS.md — Ivy Blog Bot
+<div align="center">
+  <h1>📋 AGENTS.md — Ivy Blog Bot</h1>
+  <p><i>Complete technical reference for the Ivy ecosystem</i></p>
 
-Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
+  <p>
+    <img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
+    <img src="https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white" alt="Python"/>
+    <img src="https://img.shields.io/badge/Cloudflare%20Workers-F38020?style=flat&logo=cloudflare&logoColor=white" alt="Cloudflare"/>
+    <img src="https://img.shields.io/badge/Gemini-8E75FF?style=flat&logo=googlegemini&logoColor=white" alt="Gemini"/>
+    <img src="https://img.shields.io/badge/CrewAI-FF6B6B?style=flat&logo=crewai&logoColor=white" alt="CrewAI"/>
+    <img src="https://img.shields.io/badge/D1-003B5C?style=flat&logo=cloudflare&logoColor=white" alt="D1"/>
+    <img src="https://img.shields.io/badge/Jekyll-CC0000?style=flat&logo=jekyll&logoColor=white" alt="Jekyll"/>
+  </p>
+</div>
 
 ---
 
-## Architecture
+## 🏗️ Overview
+
+Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
+
+### Data Flow
 
 ```
-Telegram → Cloudflare Worker (Hono + grammY) → Gemini API (chat, tool loop)
-                                                  → D1 (sessions, memories, reminders)
-                                                  → GitHub Actions dispatch (/write)
-                                                     → CrewAI pipeline → Jekyll build → gh-pages
+1. Telegram webhook POST → Worker (Hono + grammY)
+   ├─ Dedup by update_id (in-memory Map, 10s TTL)
+   ├─ Session loaded from D1 (d1SessionAdapter)
+   ├─ Memories loaded from D1 → injected into system prompt
+   ├─ Gemini API (chat + tool loop, max 5 turns)
+   │  ├─ memory_save / memory_recall
+   │  ├─ create_reminder / list_reminders / cancel_reminder
+   │  ├─ search_web / fetch_url / get_current_time
+   │  └─ get_movie_info / get_movie_recommendations / discover_movies
+   ├─ Response sanitized (Telegram Markdown) → sent back
+   └─ History capped at 10 messages → saved to D1
+
+2. /write <topic> → GitHub Actions dispatch
+   ├─ CrewAI pipeline (writer → humaniser → editor)
+   ├─ Unsplash images → Jekyll frontmatter
+   ├─ Commit to blog-source/_posts/
+   ├─ Jekyll build → gh-pages deploy
+   └─ Telegram notification
 ```
 
-**Data flow:**
-1. Telegram webhook POSTs to Worker → dedup by `update_id` (in-memory map, 10s TTL)
-2. Session loaded from D1 (`sessions` table via `d1SessionAdapter`)
-3. Memories loaded from D1 (`memories` table) → injected into system prompt
-4. Gemini API called with message + tool definitions → tool loop (up to 5 turns)
-5. Tool results appended to conversation → final response sanitized (Telegram Markdown) → sent back
-6. `/write <topic>` → GitHub Actions dispatch → CrewAI pipeline → Jekyll build → gh-pages
+---
 
-## Entrypoints
+## 🚏 Entrypoints
 
-| Layer | File |
-|-------|------|
-| Telegram bot (Worker) | `src/index.ts` — Hono app, grammY bot, webhook handler |
-| AI orchestration | `src/ai.ts` — Gemini calls, tool loop, model fallback chain |
-| Blog writer (CrewAI) | `src/blog_writing_crew/main.py` — `run()`, `train()`, `replay()`, `test()` |
-| Post publisher | `scripts/publish_post.py` — frontmatter + Unsplash cover → Jekyll post |
-| Trending topic finder | `scripts/find_trending_topic.py` — News API + Tavily → picks topic for automated runs |
-| Blog source | `blog-source/` — Jekyll site, Chirpy theme, `_posts/` |
-| CI/CD pipeline | `.github/workflows/daily-telegram.yml` — 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) |
+| Layer | File | Purpose |
+|-------|------|---------|
+| 🟦 **Telegram Bot** | `src/index.ts` | Hono app, grammY bot, webhook, admin API, Discord stub |
+| 🧠 **AI Engine** | `src/ai.ts` | Gemini API, tool loop, memory CRUD, movie tools, voice, PDF |
+| 📝 **Blog Writer** | `src/blog_writing_crew/main.py` | `run()`, `train()`, `replay()`, `test()` |
+| 🔧 **Writer Tools** | `src/blog_writing_crew/tools/custom_tool.py` | Tavily, Wikipedia, HN, ArXiv, OpenLibrary, RSS |
+| 🖼️ **Publisher** | `scripts/publish_post.py` | Unsplash cover + frontmatter → Jekyll post |
+| 🔍 **Topic Finder** | `scripts/find_trending_topic.py` | News API + Tavily → picks topic |
+| 📖 **Blog Host** | `blog-source/` | Jekyll / Chirpy 7.5, `_posts/` |
+| ⚙️ **CI/CD** | `.github/workflows/daily-telegram.yml` | 3x daily cron + manual dispatch |
 
-## Hono Routes
+---
+
+## 🛣️ Hono Routes
 
 | Method | Path | Handler |
 |--------|------|---------|
-| `POST` | `/` | Telegram webhook — parses update, creates grammY Bot, calls `webhookCallback` |
-| `POST` | `/admin/posts` | List blog posts from GitHub (requires `ADMIN_PASSWORD`) |
-| `POST` | `/admin/delete` | Delete a post from GitHub + trigger rebuild (requires `ADMIN_PASSWORD`) |
-| `POST` | `/discord` | Discord interactions endpoint (Ed25519 verify → PONG → deferred slash commands) |
+| `POST` | `/` | Telegram webhook — parse update, create Bot, `webhookCallback` |
+| `POST` | `/admin/posts` | List blog posts from GitHub (needs `ADMIN_PASSWORD`) |
+| `POST` | `/admin/delete` | Delete post + trigger rebuild (needs `ADMIN_PASSWORD`) |
+| `POST` | `/discord` | Discord interactions (Ed25519 verify → PONG → deferred) |
 | `POST` | `/register-commands` | Bulk-register Discord slash commands |
-| `POST` | `/chat-message` | Relay endpoint for Discord Gateway @mention relay (auth'd via `DISCORD_RELAY_SECRET`) |
+| `POST` | `/chat-message` | Relay for Discord Gateway @mention |
 | `GET` | `/init` | One-time D1 table creation |
 | `GET` | `/migrate` | Migrate tables to TEXT chat_id |
-| `GET` | `/` | Health check + `?command=set` to register Telegram webhook |
+| `GET` | `/` | Health check + `?command=set` webhook |
 
-## Commands
+---
 
-### Bot (TypeScript / Cloudflare Worker)
+## 🧪 Commands
+
+### Worker (TypeScript)
 ```bash
 npm run dev          # wrangler dev (local)
 npm run deploy       # wrangler deploy
 npm run typecheck    # tsc --noEmit
-node_modules/.bin/wrangler deploy   # if `npm run` fails
 ```
 
-### Blog Writer (Python / CrewAI)
+### Blog Writer (Python)
 ```bash
-uv sync                # install deps
-uv run crewai run      # run crew (writes output/blog_post.md)
-uv run python scripts/publish_post.py "<topic>"   # manual publish
-crewai test -n 2 -m gpt-4o-mini   # test crew
+uv sync                          # install deps
+uv run crewai run                # write blog → output/blog_post.md
+uv run python scripts/publish_post.py "topic"   # manual publish
+crewai test -n 2 -m gpt-4o-mini  # test crew
 ```
 
-### Full Pipeline (GitHub Actions)
-- Trigger: scheduled 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) or `/write <topic>` on Telegram
-- Steps: `uv sync → find_trending_topic.py → crewai run → publish_post.py → git commit → jekyll build → deploy gh-pages → Telegram notification`
+### Full Pipeline
+```bash
+# Auto: GitHub Actions (3x daily)
+# Manual: /write <topic> on Telegram
 
-## Environment Variables
-
-| Var | Used In | Notes |
-|-----|---------|-------|
-| `TELEGRAM_BOT_TOKEN` | Bot, workflow | Bot auth |
-| `GROQ_API_KEY` | `src/ai.ts` | Voice transcription (Whisper) |
-| `TAVILY_API_KEY` | Bot + crew + workflow | Web search tool |
-| `GEMINI_API_KEY` | `src/ai.ts` + `crew.py` + workflow | Bot LLM + Crew LLM (`google/gemma-4-31b-it`) |
-| `UNSPLASH_ACCESS_KEY` | `publish_post.py` + workflow | Cover images |
-| `GITHUB_PAT` | `src/index.ts` | PAT to dispatch workflow |
-| `GITHUB_REPO` | `src/index.ts` | e.g. `Thirupathi-pirate/ivy` |
-| `TELEGRAM_CHAT_ID` | workflow | Notification recipient |
-| `NEWS_API_KEY` | `scripts/find_trending_topic.py` + workflow | Trending topics |
-| `ADMIN_PASSWORD` | `src/index.ts` | Admin API access |
-| `TMDB_API_KEY` | `src/ai.ts` | Movie tool (optional) |
-| `REDDIT_CLIENT_ID` | `src/ai.ts` | Reddit search tool (optional) |
-| `REDDIT_CLIENT_SECRET` | `src/ai.ts` | Reddit search tool (optional) |
-| `REDDIT_USER_AGENT` | `src/ai.ts` | Reddit search tool (optional) |
-
-⚠️ `.env` is **committed** to git with live keys (`.gitignore` was added late). Do not add new secrets to `.env` without user confirmation.
-
-## Model Chain
-
-### Bot (Gemini) — 3-model fallback on HTTP 429
+# Steps:
+# uv sync → find_trending_topic.py → crewai run
+# → publish_post.py → git commit → jekyll build → gh-pages → Telegram notification
 ```
-gemini-2.5-flash-lite              (preferred, 30 RPM / 1,500 RPD / 1M TPM)
-  → gemini-2.5-flash               (fallback 1)
-  → gemini-3.1-flash-lite          (fallback 2)
+
+---
+
+## 🔐 Environment Variables
+
+| Variable | Required | Used In | Purpose |
+|----------|----------|---------|---------|
+| `TELEGRAM_BOT_TOKEN` | ✅ Yes | Bot, workflow | Telegram bot auth |
+| `GEMINI_API_KEY` | ✅ Yes | `ai.ts`, `crew.py`, workflow | AI chat + Crew LLM |
+| `GROQ_API_KEY` | ✅ Yes | `ai.ts` | Voice (Whisper) |
+| `TAVILY_API_KEY` | ✅ Yes | Bot, crew, workflow | Web search tool |
+| `GITHUB_PAT` | ✅ Yes | `index.ts` | GitHub Actions dispatch |
+| `GITHUB_REPO` | ✅ Yes | `index.ts` | e.g. `Thirupathi-pirate/ivy` |
+| `UNSPLASH_ACCESS_KEY` | ✅ Yes | `publish_post.py`, workflow | Blog cover images |
+| `NEWS_API_KEY` | ✅ Yes | `find_trending_topic.py` | Trending topics |
+| `TELEGRAM_CHAT_ID` | ✅ Yes | workflow | Notification recipient |
+| `ADMIN_PASSWORD` | ❌ Optional | `index.ts` | Admin API access |
+| `TMDB_API_KEY` | ❌ Optional | `ai.ts` | Enhanced movie tools |
+| `REDDIT_CLIENT_ID` | ❌ Optional | `ai.ts` | Reddit search |
+| `REDDIT_CLIENT_SECRET` | ❌ Optional | `ai.ts` | Reddit search |
+| `REDDIT_USER_AGENT` | ❌ Optional | `ai.ts` | Reddit search |
+| `DISCORD_BOT_TOKEN` | ❌ Optional | `index.ts` | Discord bot |
+| `DISCORD_PUBLIC_KEY` | ❌ Optional | `index.ts` | Ed25519 verify |
+| `DISCORD_APP_ID` | ❌ Optional | `index.ts` | Command registration |
+
+> ⚠️ `.env` is **committed** to git. Do not add new secrets without user confirmation.
+
+---
+
+## ⚡ Model Chain
+
+### Bot — 3-model Gemini fallback
 ```
-Rate-limit detection: parses `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests` from 429 responses. Also catches 503 and Gemini-specific error codes. If all 3 models are exhausted, returns *"I'm rate-limited across all models"*.
+gemini-2.5-flash-lite         (preferred — 30 RPM / 1,500 RPD / 1M TPM)
+  → gemini-2.5-flash           (fallback 1)
+  → gemini-3.1-flash-lite      (fallback 2)
+```
+**Rate limiting:** Detects 429, 503, Gemini error codes. Parses `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests`. If all 3 models exhausted → *"I'm rate-limited across all models"*.
 
 ### Blog Writer (CrewAI)
-`google/gemma-4-31b-it` via Google Gemini API. 32768 max tokens, 300s timeout. Retry logic: 3 attempts with exponential backoff (30s, 60s, 120s) on 5xx / timeout / connection errors.
+```
+Model: google/gemma-4-31b-it
+Max tokens: 32768
+Timeout: 300s
+Retry: 3 attempts (exponential backoff: 30s, 60s, 120s on 5xx/timeout/connection errors)
+```
 
-## D1 Schema
+---
 
-Three tables:
+## 🗄️ D1 Schema
 
 ```sql
--- Sessions (grammY session adapter — custom d1SessionAdapter)
+-- Sessions (custom d1SessionAdapter)
 CREATE TABLE sessions (
   chat_id TEXT PRIMARY KEY,
-  data TEXT NOT NULL          -- JSON: { history: ChatMessage[], model: string }
+  data TEXT NOT NULL              -- JSON: { history: ChatMessage[], model: string }
 );
 
 -- Long-term memory (key-value per user)
@@ -127,167 +172,217 @@ CREATE INDEX idx_memories_chat_id ON memories(chat_id);
 CREATE TABLE reminders (
   id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL,
-  timestamp INTEGER NOT NULL, -- epoch ms
+  timestamp INTEGER NOT NULL,     -- epoch ms
   message TEXT NOT NULL
 );
 CREATE INDEX idx_reminders_timestamp ON reminders(timestamp);
 ```
 
-Session history is capped at 10 messages: system prompt + 9 most recent user/assistant turns.
+**History cap:** system prompt + 9 most recent user/assistant turns.
 
-## Tool Definitions (Ivy's Tool Loop)
+---
 
-The AI has access to these functions. Tool detection is GOAP-style: the `needsTools()` function checks user messages for trigger keywords before attaching tool definitions, saving tokens on simple queries.
+## 🛠️ Tool Definitions
 
-### Memory
-- **`memory_save(key, value)`** — Save a fact/preference to D1. Upserts on conflict.
-- **`memory_recall(key?)`** — Recall saved facts. With key: returns specific value. Without: lists all.
+Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for trigger keywords before attaching tool definitions, saving tokens on simple queries.
 
-### Reminders
-- **`create_reminder(time, message)`** — Schedule a reminder. `time` in HH:MM (24h) or ISO date string. Returns reminder ID + Unix timestamp.
-- **`list_reminders()`** — List all active reminders with relative time display.
-- **`cancel_reminder(reminder_id)`** — Cancel by ID. Returns success/not_found.
+### 🧠 Memory
+| Tool | Description |
+|------|-------------|
+| `memory_save(key, value)` | Save a fact/preference to D1 (upserts) |
+| `memory_recall(key?)` | Recall saved facts — specific key or all |
 
-### Web
-- **`search_web(query)`** — Tavily search with `include_answer: true`, returns summary + up to 5 results with content snippets.
-- **`fetch_url(url)`** — Fetch a URL's content (first 8000 chars). Used for reading articles, docs, APIs.
+### ⏰ Reminders
+| Tool | Description |
+|------|-------------|
+| `create_reminder(time, message)` | Schedule — HH:MM (24h) or ISO date. Returns ID + timestamp |
+| `list_reminders()` | List all active reminders with relative time |
+| `cancel_reminder(reminder_id)` | Cancel by ID. Returns success/not_found |
 
-### Time
-- **`get_current_time(timezone?)`** — Current time in UTC or specified IANA timezone (e.g. `Asia/Kolkata`).
+### 🌐 Web
+| Tool | Description |
+|------|-------------|
+| `search_web(query)` | Tavily search (`include_answer: true`), summary + 5 results |
+| `fetch_url(url)` | Fetch URL content (first 8000 chars) |
 
-### Movies (3-source fallback chain: TMDB → Reddit → Tavily)
-- **`get_movie_info(title, year?)`** — TMDB search → Reddit discussions (r/movies, r/moviecritic, r/TrueFilm) → Tavily. Returns rating, year, genres, overview + Reddit community posts.
-- **`get_movie_recommendations(title)`** — TMDB recommendations → Reddit suggestions (r/MovieSuggestions, r/ifyoulikeblank) → Tavily.
-- **`discover_movies(genres?, min_rating?, year?)`** — TMDB discover (vote_average desc, min 100 votes) → Reddit search → Tavily.
+### 🕐 Time
+| Tool | Description |
+|------|-------------|
+| `get_current_time(timezone?)` | UTC or IANA timezone (e.g. `Asia/Kolkata`) |
 
-## Reminder System
+### 🎬 Movies (3-source fallback)
+| Tool | Chain | Description |
+|------|-------|-------------|
+| `get_movie_info(title, year?)` | TMDB → Reddit (r/movies, r/moviecritic, r/TrueFilm) → Tavily | Rating, year, genres, overview + community posts |
+| `get_movie_recommendations(title)` | TMDB → Reddit (r/MovieSuggestions, r/ifyoulikeblank) → Tavily | Similar movie suggestions |
+| `discover_movies(genres?, min_rating?, year?)` | TMDB discover → Reddit search → Tavily | Find by genre/rating/year |
 
-- Cron `* * * * *` runs `scheduled()` every minute
-- Queries `reminders WHERE timestamp <= now`
-- Sends each due reminder via Telegram `sendMessage` with Markdown
-- Deletes from D1 on successful send
-- Hour/minute parsing: HH:MM sets today at that UTC time, or tomorrow if already past
-- Full ISO date strings also accepted
-- Reminder IDs: 8-char random UUID prefix
+---
 
-## Image / Voice / File Handling
+## ⏲️ Reminder System
 
-### Photos
-- Gets largest photo from Telegram file API
-- Converts to base64 data URI → sends to Gemini as inline image
-- Streams response back with simulated reveal (500-char steps)
-- Strips image data from stored history to save KV quota
+```
+Cron: * * * * * (every minute)
+Query: reminders WHERE timestamp <= now
+Delivery: Telegram sendMessage (Markdown)
+Cleanup: DELETE on success
+```
 
-### Voice
-- Downloads OGG via Telegram API
-- Transcribes with Groq Whisper (`whisper-large-v3-turbo`)
-- Feeds transcript back into chat flow
+- **HH:MM** → today at that UTC time (or tomorrow if past)
+- **ISO date** → absolute timestamp
+- **IDs** → 8-char random UUID prefix
 
-### Documents
-- **PDF**: Parses raw bytes with TextDecoder, extracts metadata (`/Info` dict) and text operations (`Tj`, `TJ`, `'`, `"`). Detects uncompressed vs. scanned. Decodes PDF escape sequences (octal, `\n`, `\r`, `\t`). Returns first 10K chars.
-- **Text files**: Downloads, reads as UTF-8, truncates at 10K chars. Supported: `.txt .csv .json .xml .md .html .log .yaml .toml .py .js .ts .rs .go .java .c .cpp .h .sql .rb .php .sh` and more.
+---
 
-### LaTeX Rendering
-`$$...$$` or `\[...\]` in user messages → POST to QuickLaTeX → fetches PNG → sends as photo via `sendPhoto`. Fire-and-forget (error-tolerant).
+## 🖼️ Image / Voice / File Handling
 
-### Mermaid Rendering
-```` ```mermaid `` → base64url encodes diagram → fetches `mermaid.ink/img/` PNG → sends as photo via `sendPhoto`. Fire-and-forget.
+### 📸 Photos
+```
+1. Get largest photo from Telegram file API
+2. Convert to base64 data URI → Gemini as inline image
+3. Stream response (500-char reveal steps)
+4. Strip image data from stored history (save KV quota)
+```
 
-## CrewAI Pipeline
+### 🎤 Voice
+```
+1. Download OGG via Telegram API
+2. Groq Whisper (whisper-large-v3-turbo) transcription
+3. Feed transcript back into chat flow
+```
 
-Three agents in sequence:
+### 📄 Documents
+| Type | Handling |
+|------|----------|
+| **PDF** | Raw bytes → TextDecoder → extract `/Info` metadata + `Tj`/`TJ`/`'`/`"` text ops. Decodes escape sequences. Returns first 10K chars |
+| **Text** (`.txt .csv .json .xml .md .html .log .yaml .toml .py .js .ts .rs .go .java .c .cpp .h .sql .rb .php .sh` + more) | UTF-8, truncated at 10K chars |
 
-### Writer
-- Tools: `news_search` (Tavily), `wikipedia_search`, `hackernews_search` (Algolia), `arxiv_search`, `openlibrary_search`, `rss_feed` (feedparser)
-- Researches topic across all sources, collects verifiable facts, statistics, real user quotes, academic papers
-- Writes ≥2500 word blog post with 8 sections, emoji headers, Mermaid diagrams, blockquotes, bullet lists, inline source links
+### 📐 LaTeX
+`$$...$$` or `\[...\]` → QuickLaTeX POST → PNG → `sendPhoto`. Fire-and-forget.
+
+### 🧮 Mermaid
+```` ```mermaid `` → base64url encode → `mermaid.ink/img/` PNG → `sendPhoto`. Fire-and-forget.
+
+---
+
+## 👥 CrewAI Pipeline
+
+Three agents running sequentially:
+
+```
+┌──────────┐     ┌────────────┐     ┌────────┐
+│  Writer  │────→│ Humaniser  │────→│ Editor │
+│(research)│     │ (rewrite)  │     │(polish)│
+└──────────┘     └────────────┘     └────────┘
+```
+
+### ✍️ Writer
+- **Tools:** `news_search` (Tavily), `wikipedia_search`, `hackernews_search` (Algolia), `arxiv_search`, `openlibrary_search`, `rss_feed` (feedparser)
+- Researches across all sources — verifiable facts, statistics, real user quotes, academic papers
+- Writes **≥2500 words** — 8 sections + intro + conclusion
+- Emoji headers, Mermaid diagrams, blockquotes, bullet lists, inline source links
 - Self-verifies every claim has a source URL
 
-### Humaniser
-- Rewrites to natural conversational tone (no AI jargon, no corporate language)
+### 🗣️ Humaniser
+- Rewrites to natural conversational tone
+- No AI jargon, no corporate language
 - Preserves all facts, source attributions, visual formatting
-- Removes unsourced/unverifiable claims entirely (no `[UNVERIFIED]` markers)
+- Removes unsourced claims entirely (no `[UNVERIFIED]` markers)
 
-### Editor
-- Grammar/spelling/formatting polish
+### ✅ Editor
+- Grammar, spelling, formatting polish
 - Fact-checks every claim against provided sources
 - Removes or rephrases unsupported statements
-- Ensures publication-ready output with clean markdown
+- Publication-ready output with clean markdown
 
 ### Retry Logic
 ```python
 for attempt in 1..3:
-    try: crew.kickoff()
-    except (5xx, timeout, connection error): wait(2^attempt * 30s)
-    else: break
+    try:
+        crew.kickoff()
+    except (5xx, timeout, connection error):
+        wait(2^attempt * 30s)
+    else:
+        break
 ```
 
-## Blog Host (`blog-source/`)
+---
 
-Jekyll site using **Chirpy 7.5** with a custom **Midnight Purple** theme.
+## 📖 Blog Host (`blog-source/`)
+
+Jekyll site — **Chirpy 7.5** — **Midnight Purple** theme.
 
 ### Key Files
+
 | Path | Purpose |
 |------|---------|
 | `_sass/custom/custom.scss` | Midnight Purple theme (bg `#12121E`, accent `#BB86FC`) |
-| `_includes/custom/head.html` | Mermaid dark-theme, OG tags, JSON-LD schema, favicon, canonical |
+| `_includes/custom/head.html` | Mermaid dark-theme, OG tags, JSON-LD, favicon, canonical |
 | `_includes/custom/tail.html` | Unsplash download-tracking JS |
-| `_includes/custom/post.html` | Related posts section at end of each article |
-| `_includes/breadcrumb.html` | Breadcrumb navigation with JSON-LD support |
-| `_includes/footer.html` | Custom footer with GitHub link |
+| `_includes/custom/post.html` | Related posts section |
+| `_includes/breadcrumb.html` | Breadcrumb nav + JSON-LD |
+| `_includes/footer.html` | Custom footer + GitHub link |
 | `_tabs/about.md` | About page |
-| `404.html` | Custom 404 with theme styling |
-| `robots.txt` | Search engine crawl rules |
-| `sitemap.xml` | Auto-generated by `jekyll-sitemap` |
+| `404.html` | Custom 404 |
+| `robots.txt` | Crawl rules |
+| `sitemap.xml` | Auto-generated (`jekyll-sitemap`) |
 
-### Mermaid
-- Dark theme via `window.mermaid` in `head.html` (theme: `base`, purple accents)
-- SCSS overrides container + SVG child elements (purple strokes/edges, font)
+### 🧮 Mermaid
+- Dark theme via `window.mermaid` (theme: `base`, purple accents)
+- SCSS overrides: purple strokes/edges, custom font
 - Frontmatter `mermaid: true` required
 
-### SEO
-- `jekyll-sitemap` auto-generates `sitemap.xml`
-- `jekyll-last-modified-at` adds `lastmod` to sitemap entries
-- `robots.txt` points to sitemap, allows all
-- `head.html`: canonical URL, meta description, OG tags, Twitter cards, JSON-LD `BlogPosting` schema
-- Google Search Console verification placeholder in `head.html`
-- Page title: **Ivy**, tagline: "Daily thoughts on tech, science & culture"
+### 🔍 SEO
+- `jekyll-sitemap` → `sitemap.xml`
+- `jekyll-last-modified-at` → `lastmod` in sitemap
+- `robots.txt` → allow all, point to sitemap
+- `head.html`: canonical URL, meta description, OG tags, Twitter cards, JSON-LD `BlogPosting`
+- Google Search Console placeholder
+- Page title: **Ivy** / Tagline: *"Daily thoughts on tech, science & culture"*
 - JSON-LD: WebSite (knowledge panel + search action) + BlogPosting (dates, author, publisher, image, keywords)
-- Breadcrumb JSON-LD + `article:section` for category context
-- Preconnect/dns-prefetch for Google Fonts and Unsplash
-- `theme-color` meta for mobile browser UI (#12121E)
-- No AI references in site metadata — reads as a human editorial blog
+- Breadcrumb JSON-LD + `article:section` for category
+- Preconnect/dns-prefetch for Google Fonts + Unsplash
+- `theme-color: #12121E` for mobile browser UI
+- **No AI references** — reads as a human editorial blog
 
-### Performance
-- Fonts via `<link>` in `head.html` (not CSS `@import`) — fetch starts during HTML parsing
-- Preload: Inter + Spectral with `as="style"`
-- Non-blocking: Playfair Display uses `media="print" onload="this.media='all'"`
-- CLS prevention: avatar `aspect-ratio: 1`, inline images have explicit `width`/`height`
-- Lazy loading: inline images `loading="lazy"` + `data-unsplash-dl` for download tracking
-- Preconnect: early connection to Google Fonts and Unsplash origins
+### ⚡ Performance
+| Technique | Detail |
+|-----------|--------|
+| **Fonts** | `<link>` in head (not CSS `@import`) — fetch starts during HTML parsing |
+| **Preload** | Inter + Spectral with `as="style"` |
+| **Non-blocking** | Playfair Display: `media="print" onload="this.media='all'"` |
+| **CLS prevention** | Avatar `aspect-ratio: 1`; inline images have explicit `width`/`height` |
+| **Lazy loading** | `loading="lazy"` + `data-unsplash-dl` on inline images |
+| **Preconnect** | Early connection to Google Fonts + Unsplash |
 
-### Publishing Pipeline (`scripts/publish_post.py`)
-- Reads crew output from `output/blog_post.md`
-- Fetches 2 Unsplash images: 1st as cover (frontmatter), 2nd inline after intro
-- Detects `mermaid` code blocks → sets `mermaid: true` in frontmatter
-- Detects LaTeX patterns (`$$`, `\[`, `\text`, `\sum`, Greek letters, etc.) → sets `math: true`
-- Writes to `blog-source/_posts/YYYY-MM-DD-slug.md`
-- Gracefully falls back to 0-1 images if Unsplash fails
+### 🖼️ Publishing Pipeline (`scripts/publish_post.py`)
+1. Read crew output from `output/blog_post.md`
+2. Fetch **2 Unsplash images** (cover + inline)
+3. Detect `mermaid` code blocks → `mermaid: true`
+4. Detect LaTeX (`$$`, `\[`, `\text`, `\sum`, Greek letters, etc.) → `math: true`
+5. Write to `blog-source/_posts/YYYY-MM-DD-slug.md`
+6. Graceful fallback to 0–1 images if Unsplash fails
 
-### UX Features
-- **Page fade-in**: opacity + slide-up animation on load
-- **Breadcrumbs**: schema-backed navigation on posts
-- **Related posts**: 3 most recent articles at end of each post
-- **Reading progress**: gradient purple progress bar at top of page
-- **Share buttons**: Twitter, LinkedIn, Telegram
-- **Smooth scroll**: `scroll-behavior: smooth` on `<html>`
+### 🎨 UX Features
+- **Page fade-in** — opacity + slide-up animation
+- **Breadcrumbs** — schema-backed navigation
+- **Related posts** — 3 most recent articles
+- **Reading progress** — gradient purple progress bar
+- **Share buttons** — Twitter, LinkedIn, Telegram
+- **Smooth scroll** — `scroll-behavior: smooth`
 
-### Avatar & Favicon
-- Source: `/logo.png` (233×196, center-cropped to square)
-- Avatar: `assets/avatar.webp` (192×192, circular in sidebar with purple border)
-- Favicons: `assets/img/favicons/` (`.ico`, 16×16, 32×32, 96×96 PNG, apple-touch-icon 180×180)
+### 🖌️ Avatar & Favicon
+| Asset | Source | Specs |
+|-------|--------|-------|
+| Avatar | `assets/avatar.webp` | 192×192, circular, purple border |
+| Logo | `/logo.png` | 233×196, center-cropped to square |
+| Favicons | `assets/img/favicons/` | `.ico` + 16×16 + 32×32 + 96×96 PNG + apple-touch-icon 180×180 |
 
-## CI/CD Workflow (`.github/workflows/daily-telegram.yml`)
+---
+
+## ⚙️ CI/CD Workflow
+
+### `.github/workflows/daily-telegram.yml`
 
 ```yaml
 on:
@@ -301,55 +396,86 @@ on:
         description: "Blog topic"
 ```
 
-Steps:
-1. `uv sync` — Install Python deps
-2. `find_trending_topic.py --type tech|general` — Auto-discover topic (skipped if `topic` input provided)
-3. `crewai run` — Write blog via CrewAI pipeline
-4. `publish_post.py` — Add Unsplash images + Jekyll frontmatter
-5. `git add` + `git commit` + `git push` — Commit to `main`
-6. `jekyll build` — Build site
-7. `gh-pages` deploy
-8. `curl` Telegram `sendMessage` — Notify `TELEGRAM_CHAT_ID`
+**Steps:**
+```
+1. uv sync                    ─ Install Python deps
+2. find_trending_topic.py     ─ Auto-discover topic (skipped if topic input provided)
+   --type tech|general
+3. crewai run                 ─ Write blog via CrewAI
+4. publish_post.py            ─ Unsplash images + Jekyll frontmatter
+5. git add + commit + push    ─ Commit to main [skip ci]
+6. jekyll build               ─ Build site
+7. gh-pages deploy            ─ Deploy
+8. Telegram notification       ─ sendMessage to TELEGRAM_CHAT_ID
+```
 
-Tech vs general determination: UTC 00:20 = IST 5:50 AM → tech; UTC 04:30 = IST 10:00 AM → general; UTC 12:00 = IST 5:30 PM → general.
+**Tech vs General:** UTC 00:20 (IST 5:50 AM) → tech; UTC 04:30 (IST 10:00 AM) → general; UTC 12:00 (IST 5:30 PM) → general.
 
-## Topic Finder (`scripts/find_trending_topic.py`)
+---
 
-- **`--type tech`**: News API `category=technology` + Tavily "trending technology news today" → filter by tech keyword set (200+ terms across AI, crypto, cloud, hardware, EV, gaming, programming, etc.)
-- **`--type general`**: News API `category=general` + Tavily trending queries → exclude tech keywords
+## 🔍 Topic Finder (`scripts/find_trending_topic.py`)
+
+| Flag | Source | Filter |
+|------|--------|--------|
+| `--type tech` | News API (`category=technology`) + Tavily | 200+ tech keywords (AI, crypto, cloud, hardware, EV, gaming, programming...) |
+| `--type general` | News API (`category=general`) + Tavily | Excludes tech keywords |
+
 - Deduplicates by lowercase title (strips trailing `.?!`)
 - Randomly picks from top 20 candidates
-- Falls back to a default topic if no candidates found
+- Falls back to default topic if no candidates found
 
-## Style / Conventions
+---
 
-- **TypeScript**: strict mode, ES2022 target, `@cloudflare/workers-types`, `isolatedModules: true`
-- **CrewAI**: `@CrewBase` decorator + YAML config pattern (`agents.yaml`, `tasks.yaml`)
-- **Blog posts**: `_posts/YYYY-MM-DD-title.md` with standard Chirpy frontmatter
-- **Git**: conventional commits. CI commits `[skip ci]`
-- **`.env`**: committed to git — do not add new secrets without user confirmation
-- **`cloudflare-worker.js`** is legacy — do not edit or deploy. Active worker is `src/index.ts` + `src/ai.ts`
+## 📐 Style / Conventions
 
-## Wrangler Config
+| Area | Convention |
+|------|-----------|
+| **TypeScript** | strict mode, ES2022 target, `@cloudflare/workers-types`, `isolatedModules: true` |
+| **CrewAI** | `@CrewBase` decorator + YAML (`agents.yaml`, `tasks.yaml`) |
+| **Blog posts** | `_posts/YYYY-MM-DD-title.md` — Chirpy frontmatter |
+| **Git** | Conventional commits. CI commits `[skip ci]` |
+| **`.env`** | Committed to git — do not add secrets without confirmation |
+| **Legacy** | `cloudflare-worker.js` — do not edit/deploy. Active: `src/index.ts` + `src/ai.ts` |
+
+---
+
+## ⚙️ Wrangler Config
 
 ```toml
 name = "ivy-blog-bot"
 main = "src/index.ts"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
-kv_namespaces = [{ binding = "IVY_KV", id = "9dfd92f4487a4c0aa6114b60b5c9127b" }]
-d1_databases = [{ binding = "IVY_DB", database_name = "ivy-blog-bot", database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f" }]
-triggers = { crons = ["* * * * *"] }
+
+[[kv_namespaces]]
+binding = "IVY_KV"
+id = "9dfd92f4487a4c0aa6114b60b5c9127b"
+
+[[d1_databases]]
+binding = "IVY_DB"
+database_name = "ivy-blog-bot"
+database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f"
+
+[triggers]
+crons = ["* * * * *"]
+
+[vars]
+DISCORD_APP_ID = "1521363304579338330"
+DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8ffcd22b"
 ```
 
-KV namespace is declared but not actively used for the Telegram session adapter (in-memory Map with 10s TTL used instead to save KV quota). D1 is the primary data store.
+> KV is declared but **not actively used** — Telegram session adapter uses an in-memory Map (10s TTL) to save KV quota. D1 is the primary store.
 
-## Key Constraints
+---
 
-- **Blog posts**: ≥2500 words, 8 sections + intro + conclusion, emoji headers, Mermaid diagrams, blockquotes, inline source links, rich markdown — expensive in tokens
-- **Bot persona**: Ivy — warm, female, friendly AI assistant
-- **Session history**: D1-stored via custom `d1SessionAdapter()`, last ~10 messages (system + 9 recent)
-- **Reminders**: D1-backed, fired by cron `* * * * *`
-- **Tool loop**: max 5 turns per message to prevent runaway tool calls
-- **Message dedup**: in-memory Map for Telegram `update_id`, 10s TTL, max 100 entries
-- **No tests** — `tests/` dir exists but empty
+## 📌 Key Constraints
+
+| Constraint | Detail |
+|-----------|--------|
+| **Blog posts** | ≥2500 words, 8 sections + intro + conclusion, emoji headers, Mermaid, blockquotes, source links |
+| **Bot persona** | Ivy — warm, female, friendly AI assistant |
+| **Session history** | D1 via `d1SessionAdapter()`, last ~10 messages (system + 9 recent) |
+| **Reminders** | D1-backed, `* * * * *` cron |
+| **Tool loop** | Max 5 turns per message |
+| **Message dedup** | In-memory Map, `update_id`, 10s TTL, max 100 entries |
+| **Tests** | `tests/` dir exists but empty |
