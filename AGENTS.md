@@ -1,17 +1,16 @@
 # AGENTS.md — Ivy Blog Bot
 
-Three-layer project: **Telegram bot** + **Discord bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
+Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
 
 ---
 
 ## Architecture
 
 ```
-Telegram user                     Cloudflare Worker (Hono + grammY)
-Discord user    →  POST /discord  →  Gemini API (chat, tool loop)
-                                           → D1 (sessions, memories, reminders)
-                                           → GitHub Actions dispatch (/write)
-                                              → CrewAI pipeline → Jekyll build → gh-pages
+Telegram → Cloudflare Worker (Hono + grammY) → Gemini API (chat, tool loop)
+                                                  → D1 (sessions, memories, reminders)
+                                                  → GitHub Actions dispatch (/write)
+                                                     → CrewAI pipeline → Jekyll build → gh-pages
 ```
 
 ## Entrypoints
@@ -19,11 +18,10 @@ Discord user    →  POST /discord  →  Gemini API (chat, tool loop)
 | Layer | File |
 |-------|------|
 | Telegram bot (Worker) | `src/index.ts` — Hono app, grammY bot, webhook handler |
-| Discord bot (Worker) | `src/index.ts` — `POST /discord` handler, slash command routing |
 | AI orchestration | `src/ai.ts` — Gemini calls, tool loop, model fallback chain |
 | Blog writer (CrewAI) | `src/blog_writing_crew/main.py` — `run()`, `train()`, `replay()`, `test()` |
 | Post publisher | `scripts/publish_post.py` — frontmatter + Unsplash cover → Jekyll post |
-| Trending topic finder | `scripts/find_trending_topic.py` — Google Trends + News API → picks topic for automated runs |
+| Trending topic finder | `scripts/find_trending_topic.py` — News API + Tavily → picks topic for automated runs |
 | Blog source | `blog-source/` — Jekyll site, Chirpy theme, `_posts/` |
 | CI/CD pipeline | `.github/workflows/daily-telegram.yml` — 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) |
 
@@ -46,7 +44,7 @@ crewai test -n 2 -m gpt-4o-mini   # test crew
 ```
 
 ### Full Pipeline (GitHub Actions)
-- Trigger: scheduled 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) or `/write <topic>` on Telegram/Discord
+- Trigger: scheduled 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) or `/write <topic>` on Telegram
 - Steps: `uv sync → find_trending_topic.py → crewai run → publish_post.py → git commit → jekyll build → deploy gh-pages → Telegram notification`
 
 ## Environment Variables
@@ -61,14 +59,10 @@ crewai test -n 2 -m gpt-4o-mini   # test crew
 | `GITHUB_PAT` | `src/index.ts` | PAT to dispatch workflow |
 | `GITHUB_REPO` | `src/index.ts` | e.g. `Thirupathi-pirate/ivy` |
 | `TELEGRAM_CHAT_ID` | workflow | Notification recipient |
-| `DISCORD_BOT_TOKEN` | `src/index.ts` | Discord bot auth (secret) |
-| `DISCORD_PUBLIC_KEY` | `src/index.ts` | Ed25519 signature verification |
-| `DISCORD_APP_ID` | `src/index.ts` | Command registration + webhook URL |
-| `NEWS_API_KEY` | `scripts/find_trending_topic.py` + workflow | Trending topics (Google Trends supplement) |
-| `REDDIT_CLIENT_ID` | `src/index.ts` | Reddit search tool (optional) |
-| `REDDIT_CLIENT_SECRET` | `src/index.ts` | Reddit search tool (optional) |
-| `REDDIT_USER_AGENT` | `src/index.ts` | Reddit search tool (optional) |
-| `DISCORD_RELAY_SECRET` | `src/index.ts` | Shared secret for relay→Worker auth |
+| `NEWS_API_KEY` | `scripts/find_trending_topic.py` + workflow | Trending topics |
+| `REDDIT_CLIENT_ID` | `src/ai.ts` | Reddit search tool (optional) |
+| `REDDIT_CLIENT_SECRET` | `src/ai.ts` | Reddit search tool (optional) |
+| `REDDIT_USER_AGENT` | `src/ai.ts` | Reddit search tool (optional) |
 
 ⚠️ `.env` is **committed** to git with live keys (`.gitignore` was added late). Do not add new secrets to `.env` without user confirmation.
 
@@ -91,7 +85,6 @@ Rate-limit detection: parses `retry-after`, `x-ratelimit-remaining-requests`, `x
 - **Bot persona**: Ivy — warm, female, friendly AI assistant
 - **Reminders**: D1-backed, fired by cron `* * * * *`
 - **Session history**: D1-stored via custom `d1SessionAdapter()`, last ~10 messages (system + 9 recent)
-- **Discord**: Ed25519 signature verification, deferred responses (type 5), `/chat`/`/new`/`/clear`/`/system`/`/model` commands
 - **No tests** — `tests/` dir exists but empty
 - **`cloudflare-worker.js` is legacy** — do not edit or deploy. Active worker is `src/index.ts` + `src/ai.ts`
 
