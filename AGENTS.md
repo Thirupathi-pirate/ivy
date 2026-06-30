@@ -1,15 +1,17 @@
 # AGENTS.md — Ivy Blog Bot
 
-Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
+Three-layer project: **Telegram bot** + **Discord bot** (TypeScript, Cloudflare Worker) + **blog writer** (Python, CrewAI) + **blog host** (Jekyll/Chirpy, GitHub Pages).
 
 ---
 
 ## Architecture
 
 ```
-Telegram user → Cloudflare Worker (Hono + grammY) → Groq API (chat/reminders/web search)
-                                                  → GitHub Actions dispatch (/write)
-                                                     → CrewAI pipeline → Jekyll build → gh-pages
+Telegram user                     Cloudflare Worker (Hono + grammY)
+Discord user    →  POST /discord  →  Gemini API (chat, tool loop)
+                                           → D1 (sessions, memories, reminders)
+                                           → GitHub Actions dispatch (/write)
+                                              → CrewAI pipeline → Jekyll build → gh-pages
 ```
 
 ## Entrypoints
@@ -17,11 +19,13 @@ Telegram user → Cloudflare Worker (Hono + grammY) → Groq API (chat/reminders
 | Layer | File |
 |-------|------|
 | Telegram bot (Worker) | `src/index.ts` — Hono app, grammY bot, webhook handler |
-| AI orchestration | `src/ai.ts` — Groq calls, tool loop, model fallback chain |
+| Discord bot (Worker) | `src/index.ts` — `POST /discord` handler, slash command routing |
+| AI orchestration | `src/ai.ts` — Gemini calls, tool loop, model fallback chain |
 | Blog writer (CrewAI) | `src/blog_writing_crew/main.py` — `run()`, `train()`, `replay()`, `test()` |
 | Post publisher | `scripts/publish_post.py` — frontmatter + Unsplash cover → Jekyll post |
+| Trending topic finder | `scripts/find_trending_topic.py` — Google Trends + News API → picks topic for automated runs |
 | Blog source | `blog-source/` — Jekyll site, Chirpy theme, `_posts/` |
-| CI/CD pipeline | `.github/workflows/daily-telegram.yml` — daily 05:30 UTC + `/write` dispatch |
+| CI/CD pipeline | `.github/workflows/daily-telegram.yml` — 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) |
 
 ## Commands
 
@@ -42,8 +46,8 @@ crewai test -n 2 -m gpt-4o-mini   # test crew
 ```
 
 ### Full Pipeline (GitHub Actions)
-- Trigger: scheduled 05:30 UTC daily or `/write <topic>` on Telegram
-- Steps: `uv sync → crewai run → publish_post.py → git commit → jekyll build → deploy gh-pages → Telegram notification`
+- Trigger: scheduled 3x daily (5:50 AM tech, 10 AM + 5:30 PM general) or `/write <topic>` on Telegram/Discord
+- Steps: `uv sync → find_trending_topic.py → crewai run → publish_post.py → git commit → jekyll build → deploy gh-pages → Telegram notification`
 
 ## Environment Variables
 
@@ -57,16 +61,24 @@ crewai test -n 2 -m gpt-4o-mini   # test crew
 | `GITHUB_PAT` | `src/index.ts` | PAT to dispatch workflow |
 | `GITHUB_REPO` | `src/index.ts` | e.g. `Thirupathi-pirate/ivy` |
 | `TELEGRAM_CHAT_ID` | workflow | Notification recipient |
+| `DISCORD_BOT_TOKEN` | `src/index.ts` | Discord bot auth (secret) |
+| `DISCORD_PUBLIC_KEY` | `src/index.ts` | Ed25519 signature verification |
+| `DISCORD_APP_ID` | `src/index.ts` | Command registration + webhook URL |
+| `NEWS_API_KEY` | `scripts/find_trending_topic.py` + workflow | Trending topics (Google Trends supplement) |
+| `REDDIT_CLIENT_ID` | `src/index.ts` | Reddit search tool (optional) |
+| `REDDIT_CLIENT_SECRET` | `src/index.ts` | Reddit search tool (optional) |
+| `REDDIT_USER_AGENT` | `src/index.ts` | Reddit search tool (optional) |
+| `DISCORD_RELAY_SECRET` | `src/index.ts` | Shared secret for relay→Worker auth |
 
 ⚠️ `.env` is **committed** to git with live keys (`.gitignore` was added late). Do not add new secrets to `.env` without user confirmation.
 
 ## Model Chain
 
-### Bot (Groq) — 3-model fallback on HTTP 429
+### Bot (Gemini) — 3-model fallback on HTTP 429
 ```
-meta-llama/llama-4-scout-17b-16e-instruct  (preferred, 30 RPM / 1K RPD)
-  → llama-3.3-70b-versatile                (fallback 1)
-  → llama-3.1-8b-instant                   (fallback 2, 14.4K RPD)
+gemini-2.5-flash-lite              (preferred, 30 RPM / 1,500 RPD / 1M TPM)
+  → gemini-2.5-flash               (fallback 1)
+  → gemini-3.1-flash-lite          (fallback 2)
 ```
 Rate-limit detection: parses `retry-after`, `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests` from 429 responses.
 
@@ -77,8 +89,9 @@ Rate-limit detection: parses `retry-after`, `x-ratelimit-remaining-requests`, `x
 
 - **Blog posts**: ≥2200 words, 6-8 sections, emoji headers, Mermaid diagrams, rich markdown — expensive in tokens
 - **Bot persona**: Ivy — warm, female, friendly AI assistant
-- **Reminders**: KV-backed (`IVY_KV`), fired by cron `* * * * *`
-- **Session history**: KV-stored via `@grammyjs/storage-cloudflare`, last 20 messages (system + 19 recent)
+- **Reminders**: D1-backed, fired by cron `* * * * *`
+- **Session history**: D1-stored via custom `d1SessionAdapter()`, last ~10 messages (system + 9 recent)
+- **Discord**: Ed25519 signature verification, deferred responses (type 5), `/chat`/`/new`/`/clear`/`/system`/`/model` commands
 - **No tests** — `tests/` dir exists but empty
 - **`cloudflare-worker.js` is legacy** — do not edit or deploy. Active worker is `src/index.ts` + `src/ai.ts`
 
@@ -90,6 +103,7 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 kv_namespaces = [{ binding = "IVY_KV", id = "9dfd92f4487a4c0aa6114b60b5c9127b" }]
+d1_databases = [{ binding = "IVY_DB", database_name = "ivy-blog-bot", database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f" }]
 triggers = { crons = ["* * * * *"] }
 ```
 

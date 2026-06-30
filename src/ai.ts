@@ -1,26 +1,43 @@
 const GROQ_API = "https://api.groq.com/openai/v1";
 
 const FALLBACK_CHAIN = [
-  "meta-llama/llama-4-scout-17b-16e-instruct",
-  "llama-3.3-70b-versatile",
-  "llama-3.1-8b-instant",
+  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash",
+  "gemini-3.1-flash-lite",
 ];
+
+const GEMINI_MODEL_MAP: Record<string, string> = {
+  "gemini-2.5-flash": "gemini-2.5-flash",
+  "gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
+  "gemini-3.1-flash-lite": "gemini-3.1-flash-lite",
+  "gemini-3.5-flash": "gemini-3.5-flash",
+};
+
+const GEMINI_MAX_TOKENS: Record<string, number> = {
+  "gemini-2.5-flash": 65536,
+  "gemini-2.5-flash-lite": 65536,
+  "gemini-3.1-flash-lite": 65536,
+  "gemini-3.5-flash": 65536,
+};
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
   GROQ_API_KEY: string;
+  GEMINI_API_KEY?: string;
   TAVILY_API_KEY?: string;
   TMDB_API_KEY?: string;
   REDDIT_CLIENT_ID?: string;
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
-  IVY_KV: KVNamespace;
+  IVY_DB: D1Database;
 }
 
 interface ChatMessage {
   role: string;
   content?: string | any[];
   tool_call_id?: string;
+  name?: string;
+  tool_calls?: GroqToolCall[];
 }
 
 interface GroqToolCall {
@@ -31,59 +48,31 @@ interface GroqToolCall {
 
 export type StreamCallback = (text: string, done: boolean) => Promise<void>;
 
-/** List all KV keys with a prefix, handling pagination. */
-async function kvListAll(kv: KVNamespace, prefix: string): Promise<Array<{ name: string }>> {
-  const keys: Array<{ name: string }> = [];
-  let cursor: string | undefined;
-  while (true) {
-    const list = await kv.list({ prefix, cursor });
-    keys.push(...list.keys);
-    if (list.list_complete) break;
-    cursor = (list as any).cursor;
-  }
-  return keys;
-}
-
 // ===================== Long-Term Memory =====================
 
-export async function loadUserMemories(kv: KVNamespace, chatId: number): Promise<string> {
-  const list = await kv.list({ prefix: `memory:${chatId}:`, limit: 50 });
-  const items: Array<{ key: string; value: string }> = [];
-  for (const k of list.keys) {
-    const keyName = k.name.slice(`memory:${chatId}:`.length);
-    const val = await kv.get(k.name);
-    if (val) items.push({ key: keyName, value: val });
-  }
-  if (!items.length) return "";
-  return items.map((m) => `${m.key}: ${m.value}`).join("\n");
+export async function loadUserMemories(db: D1Database, chatId: string): Promise<string> {
+  const results = await db.prepare("SELECT key, value FROM memories WHERE chat_id = ? LIMIT 50").bind(chatId).all<{ key: string; value: string }>();
+  if (!results.results?.length) return "";
+  return results.results.map((m) => `${m.key}: ${m.value}`).join("\n");
 }
 
-export async function clearUserMemories(kv: KVNamespace, chatId: number): Promise<void> {
-  const keys = await kvListAll(kv, `memory:${chatId}:`);
-  for (const k of keys) {
-    await kv.delete(k.name);
-  }
+export async function clearUserMemories(db: D1Database, chatId: string): Promise<void> {
+  await db.prepare("DELETE FROM memories WHERE chat_id = ?").bind(chatId).run();
 }
 
-async function memorySave(kv: KVNamespace, chatId: number, key: string, value: string): Promise<string> {
-  await kv.put(`memory:${chatId}:${key}`, value);
+async function memorySave(db: D1Database, chatId: string, key: string, value: string): Promise<string> {
+  await db.prepare("INSERT INTO memories (chat_id, key, value) VALUES (?, ?, ?) ON CONFLICT(chat_id, key) DO UPDATE SET value = excluded.value").bind(chatId, key, value).run();
   return `Saved "${key}" = "${value}"`;
 }
 
-async function memoryRecall(kv: KVNamespace, chatId: number, key?: string): Promise<string> {
+async function memoryRecall(db: D1Database, chatId: string, key?: string): Promise<string> {
   if (key) {
-    const val = await kv.get(`memory:${chatId}:${key}`);
-    return val ?? `No memory found for "${key}".`;
+    const row = await db.prepare("SELECT value FROM memories WHERE chat_id = ? AND key = ?").bind(chatId, key).first<{ value: string }>();
+    return row?.value ?? `No memory found for "${key}".`;
   }
-  const list = await kv.list({ prefix: `memory:${chatId}:`, limit: 50 });
-  const items: Array<{ key: string; value: string }> = [];
-  for (const k of list.keys) {
-    const keyName = k.name.slice(`memory:${chatId}:`.length);
-    const val = await kv.get(k.name);
-    if (val) items.push({ key: keyName, value: val });
-  }
-  if (!items.length) return "No saved memories.";
-  return items.map((m) => `• ${m.key}: ${m.value}`).join("\n");
+  const results = await db.prepare("SELECT key, value FROM memories WHERE chat_id = ? LIMIT 50").bind(chatId).all<{ key: string; value: string }>();
+  if (!results.results?.length) return "No saved memories.";
+  return results.results.map((m) => `• ${m.key}: ${m.value}`).join("\n");
 }
 
 // ===================== URL Fetch =====================
@@ -465,7 +454,7 @@ async function discoverTavily(apiKey: string, genres?: string, year?: string, mi
 
 // ===================== Reminder Tools =====================
 
-async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, message: string) {
+async function createReminder(db: D1Database, chatId: string, timeStr: string, message: string) {
   let timestamp: number;
   if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
     const [h, m] = timeStr.split(":").map(Number);
@@ -480,35 +469,18 @@ async function createReminder(kv: KVNamespace, chatId: number, timeStr: string, 
     if (isNaN(timestamp)) return null;
   }
   const id = crypto.randomUUID().slice(0, 8);
-  await kv.put(`reminder:${timestamp}:${id}`, JSON.stringify({ chat_id: chatId, message }));
+  await db.prepare("INSERT INTO reminders (id, chat_id, timestamp, message) VALUES (?, ?, ?, ?)").bind(id, chatId, timestamp, message).run();
   return { id, timestamp };
 }
 
-async function listReminders(kv: KVNamespace, chatId: number) {
-  const keys = await kvListAll(kv, "reminder:");
-  const items: Array<{ id: string; timestamp: number; message: string }> = [];
-  for (const key of keys) {
-    const val: any = await kv.get(key.name, "json");
-    if (val?.chat_id === chatId) {
-      const parts = key.name.split(":");
-      items.push({ id: parts[2], timestamp: parseInt(parts[1]), message: val.message });
-    }
-  }
-  return items.sort((a, b) => a.timestamp - b.timestamp);
+async function listReminders(db: D1Database, chatId: string) {
+  const results = await db.prepare("SELECT id, timestamp, message FROM reminders WHERE chat_id = ? ORDER BY timestamp ASC").bind(chatId).all<{ id: string; timestamp: number; message: string }>();
+  return results.results || [];
 }
 
-async function cancelReminder(kv: KVNamespace, chatId: number, reminderId: string) {
-  const keys = await kvListAll(kv, "reminder:");
-  for (const key of keys) {
-    if (key.name.endsWith(`:${reminderId}`)) {
-      const val: any = await kv.get(key.name, "json");
-      if (val?.chat_id === chatId) {
-        await kv.delete(key.name);
-        return true;
-      }
-    }
-  }
-  return false;
+async function cancelReminder(db: D1Database, chatId: string, reminderId: string) {
+  const result = await db.prepare("DELETE FROM reminders WHERE id = ? AND chat_id = ?").bind(reminderId, chatId).run();
+  return (result.meta.changes ?? 0) > 0;
 }
 
 async function searchWeb(apiKey: string, query: string) {
@@ -708,11 +680,11 @@ function getTools(env: Env) {
 
 // ===================== Function Call Dispatcher =====================
 
-async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCall): Promise<string> {
+async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCall): Promise<string> {
   const args = JSON.parse(toolCall.function.arguments);
   switch (toolCall.function.name) {
     case "create_reminder": {
-      const result = await createReminder(env.IVY_KV, chatId, args.time, args.message);
+      const result = await createReminder(env.IVY_DB, chatId, args.time, args.message);
       if (!result) return "Could not parse that time. Please use HH:MM format.";
       return JSON.stringify({
         status: "created",
@@ -723,7 +695,7 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
       });
     }
     case "list_reminders": {
-      const items = await listReminders(env.IVY_KV, chatId);
+      const items = await listReminders(env.IVY_DB, chatId);
       return JSON.stringify(
         items.map((r) => ({
           id: r.id,
@@ -734,15 +706,15 @@ async function handleFunctionCall(env: Env, chatId: number, toolCall: GroqToolCa
       );
     }
     case "cancel_reminder": {
-      const ok = await cancelReminder(env.IVY_KV, chatId, args.reminder_id);
+      const ok = await cancelReminder(env.IVY_DB, chatId, args.reminder_id);
       return JSON.stringify({ status: ok ? "cancelled" : "not_found" });
     }
     case "search_web":
       return await searchWeb(env.TAVILY_API_KEY!, args.query);
     case "memory_save":
-      return await memorySave(env.IVY_KV, chatId, args.key, args.value);
+      return await memorySave(env.IVY_DB, chatId, args.key, args.value);
     case "memory_recall":
-      return await memoryRecall(env.IVY_KV, chatId, args.key);
+      return await memoryRecall(env.IVY_DB, chatId, args.key);
     case "fetch_url":
       return await fetchUrl(args.url);
     case "get_current_time":
@@ -857,12 +829,185 @@ async function callGroq(
   return resp.json();
 }
 
+// ===================== Gemini API Call =====================
+
+const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+function convertContentToParts(content: string | any[] | undefined): any[] {
+  if (!content) return [{ text: "" }];
+  if (typeof content === "string") return [{ text: content }];
+  const parts: any[] = [];
+  for (const item of content) {
+    if (item.type === "text") {
+      parts.push({ text: item.text });
+    } else if (item.type === "image_url") {
+      const match = item.image_url.url.match(/^data:(image\/\w+);base64,(.+)$/);
+      if (match) {
+        parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+      }
+    }
+  }
+  return parts;
+}
+
+function messagesToGeminiContents(messages: ChatMessage[]): {
+  contents: any[];
+  systemInstruction?: any;
+} {
+  let systemInstruction: any;
+  const contents: any[] = [];
+  const callMap = new Map<string, string>();
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      systemInstruction = { parts: [{ text: msg.content || "" }] };
+      continue;
+    }
+    if (msg.role === "assistant" && (msg as any).tool_calls) {
+      for (const tc of (msg as any).tool_calls) {
+        callMap.set(tc.id, tc.function.name);
+      }
+    }
+    if (msg.role === "tool") {
+      const fnName = msg.name || callMap.get(msg.tool_call_id || "") || msg.tool_call_id || "unknown";
+      contents.push({
+        role: "user",
+        parts: [{ functionResponse: { name: fnName, response: { result: msg.content } } }],
+      });
+      continue;
+    }
+    const role = msg.role === "assistant" ? "model" : "user";
+    contents.push({ role, parts: convertContentToParts(msg.content) });
+  }
+  return { contents, systemInstruction };
+}
+
+function toolsToGeminiTools(tools: any[]): any[] {
+  if (!tools.length) return [];
+  return [{
+    functionDeclarations: tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      parameters: t.function.parameters,
+    })),
+  }];
+}
+
+function geminiFinishReason(reason: string): string {
+  if (reason === "STOP") return "stop";
+  if (reason === "MAX_TOKENS") return "length";
+  return (reason || "stop").toLowerCase();
+}
+
+async function callGemini(
+  apiKey: string,
+  messages: ChatMessage[],
+  tools: any[],
+  model: string
+): Promise<
+  | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] }; finish_reason: string }> }
+  | { _rateLimited: true; model: string }
+> {
+  const apiModel = GEMINI_MODEL_MAP[model];
+  if (!apiModel) return { _rateLimited: true, model };
+
+  const { contents, systemInstruction } = messagesToGeminiContents(messages);
+  const maxTokens = GEMINI_MAX_TOKENS[model] ?? 65536;
+
+  const body: Record<string, any> = {
+    contents,
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.7 },
+  };
+  if (systemInstruction) body.systemInstruction = systemInstruction;
+  const geminiTools = toolsToGeminiTools(tools);
+  if (geminiTools.length) body.tools = geminiTools;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${GEMINI_API_BASE}/models/${apiModel}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    clearTimeout(timeout);
+    if (e.name === "AbortError") return { _rateLimited: true, model };
+    throw e;
+  }
+  clearTimeout(timeout);
+
+  if (resp.status === 429 || resp.status === 503) return { _rateLimited: true, model };
+  if (!resp.ok) {
+    const err = await resp.text();
+    if (resp.status === 400 && err.includes("not supported")) {
+      return { _rateLimited: true, model };
+    }
+    throw new Error(`Gemini API error ${resp.status}: ${err.slice(0, 200)}`);
+  }
+
+  const data: any = await resp.json();
+
+  if (data.promptFeedback?.blockReason) {
+    console.warn(`[${model}] blocked: ${data.promptFeedback.blockReason}`);
+    return { choices: [{ message: { content: "I can't respond to that due to content safety filters." }, finish_reason: "stop" }] };
+  }
+
+  const candidate = data.candidates?.[0];
+  if (!candidate) {
+    console.warn(`[${model}] no candidates`);
+    return { choices: [{ message: { content: "I can't respond to that right now." }, finish_reason: "stop" }] };
+  }
+
+  if (candidate.finishReason === "SAFETY") {
+    console.warn(`[${model}] finish_reason=SAFETY`);
+    return { choices: [{ message: { content: "I can't respond to that due to safety filters." }, finish_reason: "stop" }] };
+  }
+
+  const parts = candidate.content?.parts || [];
+  let text = "";
+  const toolCalls: GroqToolCall[] = [];
+
+  for (const part of parts) {
+    if (part.text) text += part.text;
+    if (part.functionCall) {
+      toolCalls.push({
+        id: `call_gemini_${Date.now()}_${toolCalls.length}`,
+        type: "function",
+        function: {
+          name: part.functionCall.name,
+          arguments: typeof part.functionCall.args === "string"
+            ? part.functionCall.args
+            : JSON.stringify(part.functionCall.args),
+        },
+      });
+    }
+  }
+
+  const finishReason = geminiFinishReason(candidate.finishReason || "STOP");
+  if (finishReason === "length") {
+    console.warn(`[${model}] finish_reason=length (${text.length} chars)`);
+  }
+
+  return {
+    choices: [{
+      message: {
+        content: text || undefined,
+        tool_calls: toolCalls.length ? toolCalls : undefined,
+      },
+      finish_reason: finishReason,
+    }],
+  };
+}
+
 // ===================== Simulated Streaming =====================
 
 async function revealText(onStream: StreamCallback | undefined, text: string) {
   if (!onStream || !text) return;
-  const step = 25;
-  let pos = Math.min(60, text.length);
+  const step = 500;
+  let pos = Math.min(500, text.length);
   let lastPartial = "";
   while (pos < text.length) {
     lastPartial = text.slice(0, pos);
@@ -920,15 +1065,29 @@ function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | nul
 
 // ===================== Main AI Processor with GOAP + Tool Loop =====================
 
+const TOOL_KEYWORDS = ["remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in"];
+
+function needsTools(messages: ChatMessage[]): boolean {
+  for (const m of messages) {
+    if (m.role === "user" && typeof m.content === "string") {
+      const text = m.content.toLowerCase();
+      if (TOOL_KEYWORDS.some(kw => text.includes(kw))) return true;
+    }
+  }
+  return false;
+}
+
 async function processAiInternal(
   env: Env,
   messages: ChatMessage[],
-  chatId: number,
+  chatId: string,
   preferredModel: string | undefined,
   onStream?: StreamCallback,
   maxDepth = 5
 ): Promise<{ text: string; modelUsed: string }> {
-  const tools = getTools(env);
+  const tools = needsTools(messages) ? getTools(env) : [];
+
+  const isGemini = (m: string) => m.startsWith("gemini-");
 
   const chain = preferredModel && FALLBACK_CHAIN.includes(preferredModel)
     ? [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)]
@@ -940,7 +1099,13 @@ async function processAiInternal(
     let useTools = tools.length > 0;
 
     for (let turn = 0; turn < maxDepth; turn++) {
-      const response = await callGroq(env.GROQ_API_KEY, currentMessages, useTools ? tools : [], model);
+      const isGeminiModel = isGemini(model);
+      const apiKey = isGeminiModel ? env.GEMINI_API_KEY : env.GROQ_API_KEY;
+      if (!apiKey) continue;
+
+      const response = isGeminiModel
+        ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)
+        : await callGroq(apiKey, currentMessages, useTools ? tools : [], model);
 
       if ("_rateLimited" in response) break;
       if ("_retry" in response) {
@@ -953,27 +1118,26 @@ async function processAiInternal(
       const finishReason = choice.finish_reason;
 
       if (!msg.tool_calls) {
-        // Check if the model output a raw JSON function call as text (fallback for models that don't support tool_calls properly)
         const content = msg.content || "";
         const jsonToolCall = extractJsonToolCall(content);
         if (jsonToolCall) {
           const result = await handleFunctionCall(env, chatId, jsonToolCall);
           currentMessages.push({ role: "assistant", content: content.replace(jsonToolCall.raw, "").trim() });
-          currentMessages.push({ role: "tool", content: result, tool_call_id: jsonToolCall.id });
+          currentMessages.push({ role: "tool", content: result, tool_call_id: jsonToolCall.id, name: jsonToolCall.function.name });
           continue;
         }
-        const text = content || "No response.";
+        let text = content || "No response.";
         if (finishReason === "length") {
-          console.warn(`[${model}] finish_reason=length — response may be truncated (${text.length} chars)`);
+          text += "\n\n_... (response was cut off due to length)_";
         }
         await revealText(onStream, text);
         return { text, modelUsed: model };
       }
 
-      currentMessages.push({ role: "assistant", content: msg.content || "" });
+      currentMessages.push({ role: "assistant", content: msg.content || "", tool_calls: msg.tool_calls.map((tc: GroqToolCall) => ({ ...tc })) });
       for (const tc of msg.tool_calls) {
         const result = await handleFunctionCall(env, chatId, tc);
-        currentMessages.push({ role: "tool", content: result, tool_call_id: tc.id });
+        currentMessages.push({ role: "tool", content: result, tool_call_id: tc.id, name: tc.function.name });
       }
     }
   }
@@ -986,7 +1150,7 @@ async function processAiInternal(
 export async function processAi(
   env: Env,
   history: ChatMessage[],
-  chatId: number,
+  chatId: string,
   preferredModel?: string
 ): Promise<{ text: string; modelUsed: string }> {
   return processAiInternal(env, [...history], chatId, preferredModel);
@@ -995,7 +1159,7 @@ export async function processAi(
 export async function processAiStream(
   env: Env,
   history: ChatMessage[],
-  chatId: number,
+  chatId: string,
   onStream: StreamCallback,
   preferredModel?: string
 ): Promise<{ text: string; modelUsed: string }> {

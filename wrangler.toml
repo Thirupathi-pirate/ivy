@@ -7,5 +7,14 @@ compatibility_flags = ["nodejs_compat"]
 binding = "IVY_KV"
 id = "9dfd92f4487a4c0aa6114b60b5c9127b"
 
+[[d1_databases]]
+binding = "IVY_DB"
+database_name = "ivy-blog-bot"
+database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f"
+
 [triggers]
 crons = ["* * * * *"]
+
+[vars]
+DISCORD_APP_ID = "1521363304579338330"
+DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8ffcd22b"

@@ -10,3 +10,5 @@ build/
 blog-source/_site/
 blog-source/.bundle/
 CLOUDFLARE_TUNNEL.md
+.bundle/
+*.report.html
