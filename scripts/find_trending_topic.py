@@ -2,12 +2,17 @@
 """Find trending topics using News API + Tavily + Reddit."""
 
 import argparse
+import json
 import os
 import random
 import sys
+from pathlib import Path
 from typing import List, Set
 
 import requests
+
+USED_TOPICS_FILE = Path(__file__).parent / "used_topics.json"
+MAX_USED = 100  # ponytail: cap to avoid unbounded growth
 
 TECH_KEYWORDS: Set[str] = {
     "ai", "artificial intelligence", "machine learning", "llm", "gpt",
@@ -103,6 +108,25 @@ def deduplicate(titles: List[str]) -> List[str]:
     return result
 
 
+def load_used_topics() -> Set[str]:
+    """Load previously used topics from JSON file."""
+    if USED_TOPICS_FILE.exists():
+        try:
+            with open(USED_TOPICS_FILE) as f:
+                return set(json.load(f))
+        except (json.JSONDecodeError, OSError):
+            pass
+    return set()
+
+
+def save_used_topic(topic: str) -> None:
+    """Append a topic to the used list, capping at MAX_USED."""
+    used = load_used_topics()
+    used.add(topic)
+    used_list = list(used)[-MAX_USED:]
+    USED_TOPICS_FILE.write_text(json.dumps(used_list, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Find a trending topic for blog writing")
     parser.add_argument("--type", choices=["tech", "general"], default="general")
@@ -137,14 +161,20 @@ def main():
     unique = deduplicate(candidates)
     print(f"Candidates ({args.type}): {len(unique)}", file=sys.stderr)
 
+    # Filter out previously used topics
+    used = load_used_topics()
+    fresh = [t for t in unique if t not in used]
+    print(f"Fresh (after excluding {len(used)} used): {len(fresh)}", file=sys.stderr)
+
     fallback = "Latest technology trends shaping our future" if args.type == "tech" else "Daily life and culture around the world"
-    if not unique:
+    if not fresh:
         print(fallback)
         return
 
-    topic = random.choice(unique[:20])
+    topic = random.choice(fresh[:20])
     print(f"Selected: {topic}", file=sys.stderr)
     print(topic)
+    save_used_topic(topic)  # track selection to avoid repeats
 
 
 if __name__ == "__main__":
