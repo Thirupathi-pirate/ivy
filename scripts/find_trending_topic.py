@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 """Find topics worth writing about — relevant to people and tech enthusiasts.
 
-Tech: HN stories people actually discuss → targeted Tavily queries
-General: News API relevant stories → targeted Tavily queries
+Tech: HN stories devs discuss + India tech news + targeted Tavily
+General: India + US news (no business) + targeted Tavily
 """
 
 import argparse
 import json
 import os
 import random
-import re
 import sys
 from pathlib import Path
 from typing import List, Set, Tuple
@@ -17,7 +16,7 @@ from typing import List, Set, Tuple
 import requests
 
 USED_TOPICS_FILE = Path(__file__).parent / "used_topics.json"
-MAX_USED = 200  # ponytail: cap to avoid unbounded growth
+MAX_USED = 200
 
 TECH_KEYWORDS: Set[str] = {
     "ai", "artificial intelligence", "machine learning", "llm", "gpt",
@@ -74,22 +73,26 @@ SKIP_PATTERNS: Set[str] = {
     "daily roundup", "weekly roundup", "morning briefing",
     "today's top", "today's biggest", "in case you missed",
     "things to know", "what to know",
-    # Academic/niche — not for general readers
+    # Academic/niche
     "fundamentals of", "introduction to", "survey of",
     "paper on", "thesis on",
     # Old stuff
     "(2005)", "(2006)", "(2007)", "(2008)", "(2009)",
     "(2010)", "(2011)", "(2012)", "(2013)", "(2014)",
     "(2015)", "(2016)", "(2017)", "(2018)", "(2019)",
-    # Pure politics — divisive, not blog-worthy
+    # Pure politics
     "election", "polls", "senate", "congress", "democrat", "republican",
-    # Celebrity gossip — unless tech angle
+    # Celebrity gossip
     "celebrity", "gossip", "dating",
+    # Business/finance — user said no business
+    "raises", "valuation", "funding", "ipo", "stock", "market",
+    "investor", "venture capital", "series a", "series b", "series c",
+    "acquisition", "merger", "revenue", "profit", "loss",
+    "wall street", "nasdaq", "s&p",
 }
 
 
 def load_used_topics() -> Set[str]:
-    """Load previously used topics from JSON file."""
     if USED_TOPICS_FILE.exists():
         try:
             with open(USED_TOPICS_FILE) as f:
@@ -100,7 +103,6 @@ def load_used_topics() -> Set[str]:
 
 
 def save_used_topic(topic: str) -> None:
-    """Append a topic to the used list, capping at MAX_USED."""
     used = load_used_topics()
     used.add(topic)
     used_list = list(used)[-MAX_USED:]
@@ -108,19 +110,17 @@ def save_used_topic(topic: str) -> None:
 
 
 def is_skip(title: str) -> bool:
-    """Check if a title should be skipped."""
     lower = title.lower()
     return any(pat in lower for pat in SKIP_PATTERNS)
 
 
 def is_relevant_to_people(title: str) -> bool:
-    """Check if this topic matters to everyday people or tech enthusiasts."""
+    """Must match at least one signal that matters to real people."""
     lower = title.lower()
-    # Relevant signals — things people care about
-    relevant_words = [
+    signals = [
         # Tech people use
         "new", "update", "feature", "tool", "app", "free", "best",
-        "how to", "guide", "tip", "trick", "hack",
+        "how to", "guide", "tips", "tricks",
         "vs", "compare", "review", "worth",
         # People care about
         "health", "money", "save", "cost", "price", "deal",
@@ -129,13 +129,15 @@ def is_relevant_to_people(title: str) -> bool:
         "home", "family", "life",
         "science", "discover", "study finds", "research shows",
         "environment", "climate", "future",
-        # Tech enthusiasts care about
+        # Tech enthusiasts
         "launch", "release", "announce", "unveil",
         "open source", "github", "developer",
-        "startup", "funding", "billion",
-        "ai", "gpt", "llm", "model",
+        "ai", "gpt", "llm", "model", "copilot",
+        # India relevance
+        "india", "indian", "isro", "trai", "rbi", "upi",
+        "bharti", "jio", "infosys", "tcs", "wipro", "flipkart",
     ]
-    return any(w in lower for w in relevant_words)
+    return any(w in lower for w in signals)
 
 
 def deduplicate(titles: List[str]) -> List[str]:
@@ -152,7 +154,6 @@ def deduplicate(titles: List[str]) -> List[str]:
 # ── Hacker News (free, no API key) ──────────────────────────────────
 
 def fetch_hacker_news(limit: int = 30) -> List[Tuple[str, int]]:
-    """Fetch top HN stories as (title, score) sorted by score desc."""
     try:
         resp = requests.get(
             "https://hacker-news.firebaseio.com/v0/topstories.json",
@@ -182,17 +183,17 @@ def fetch_hacker_news(limit: int = 30) -> List[Tuple[str, int]]:
 
 # ── News API ────────────────────────────────────────────────────────
 
-def fetch_news_api(api_key: str, category: str) -> List[str]:
+def fetch_news_api(api_key: str, category: str, country: str = "us") -> List[str]:
     try:
         resp = requests.get(
             "https://newsapi.org/v2/top-headlines",
-            params={"apiKey": api_key, "country": "us", "pageSize": 20, "category": category},
+            params={"apiKey": api_key, "country": country, "pageSize": 20, "category": category},
             timeout=10,
         )
         resp.raise_for_status()
         return [a["title"] for a in resp.json().get("articles", []) if a.get("title")]
     except Exception as e:
-        print(f"News API error: {e}", file=sys.stderr)
+        print(f"News API ({country}) error: {e}", file=sys.stderr)
         return []
 
 
@@ -216,43 +217,38 @@ def fetch_tavily(api_key: str, queries: List[str]) -> List[str]:
 # ── Scoring ─────────────────────────────────────────────────────────
 
 def score_topic(title: str, source_priority: int) -> float:
-    """Score a topic for blog-worthiness.
-
-    source_priority: 0=best (HN), 1=good (News API), 2=fallback (Tavily)
-    """
-    score = 100.0 - (source_priority * 30)  # HN: 100, News: 70, Tavily: 40
+    """Score a topic for blog-worthiness. source_priority: 0=best, 1=good, 2=fallback"""
+    score = 100.0 - (source_priority * 30)
 
     lower = title.lower()
 
-    # ── Bonus: things people actually care about ──
+    # Bonus: things people actually care about
     if any(w in lower for w in ["launch", "release", "announce", "unveil"]):
-        score += 25  # new things people can use
+        score += 25
     if any(w in lower for w in ["study finds", "research shows", "scientists discover"]):
-        score += 20  # evidence-based, people trust this
+        score += 20
     if any(w in lower for w in ["how to", "guide", "tips", "tricks"]):
-        score += 20  # actionable, people love this
+        score += 20
     if any(w in lower for w in ["free", "open source", "github"]):
-        score += 15  # developers love free stuff
+        score += 15
     if any(w in lower for w in ["security", "privacy", "hack", "vulnerability"]):
-        score += 15  # affects everyone
+        score += 15
     if any(w in lower for w in ["ai", "gpt", "llm", "model", "copilot"]):
-        score += 15  # hot topic everyone follows
-    if any(w in lower for w in ["billion", "million", "funding", "startup"]):
-        score += 10  # business relevance
+        score += 15
     if any(w in lower for w in ["health", "money", "save", "cost"]):
-        score += 10  # personal relevance
+        score += 10
     if any(w in lower for w in ["vs", "compare", "review", "worth"]):
-        score += 10  # decision-making content
+        score += 10
     if "?" in title:
-        score += 5  # questions are engaging
+        score += 5
 
-    # ── Penalty: things nobody wants to read ──
+    # Penalty: things nobody wants to read
     if len(title) < 30:
-        score -= 25  # too short = low info
+        score -= 25
     if any(w in lower for w in ["opinion", "editorial", "column"]):
-        score -= 20  # subjective, not factual
+        score -= 20
     if is_skip(title):
-        score -= 100  # skip entirely
+        score -= 100
 
     return score
 
@@ -271,14 +267,22 @@ def main():
     scored: List[Tuple[str, float]] = []
 
     if args.type == "tech":
-        # 1. HN — stories developers actually discuss
+        # 1. HN — stories developers discuss
         print("Fetching Hacker News...", file=sys.stderr)
         hn_stories = fetch_hacker_news(30)
         for title, hn_score in hn_stories:
             if title not in used:
                 scored.append((title, score_topic(title, 0) + min(hn_score / 10, 30)))
 
-        # 2. Tavily — what tech people actually use/read about
+        # 2. News API — India tech
+        if api_key:
+            india_tech = fetch_news_api(api_key, "technology", country="in")
+            print(f"News API India tech: {len(india_tech)}", file=sys.stderr)
+            for t in india_tech:
+                if t not in used:
+                    scored.append((t, score_topic(t, 0)))
+
+        # 3. Tavily — what tech people actually use
         if tavily_key:
             tech_queries = [
                 "new AI tools developers are using 2026",
@@ -286,7 +290,8 @@ def main():
                 "popular open source projects trending",
                 "new app features users love",
                 "cybersecurity tips for regular users",
-                "tech startup funding news",
+                "India tech news developers",
+                "best free tools for productivity",
             ]
             tav = fetch_tavily(tavily_key, tech_queries)
             print(f"Tavily tech: {len(tav)}", file=sys.stderr)
@@ -294,24 +299,32 @@ def main():
                 if t not in used:
                     scored.append((t, score_topic(t, 2)))
 
-        # 3. News API tech (backup)
+        # 4. News API US tech (backup)
         if api_key:
-            news = fetch_news_api(api_key, "technology")
-            print(f"News API tech: {len(news)}", file=sys.stderr)
-            for t in news:
+            us_tech = fetch_news_api(api_key, "technology", country="us")
+            print(f"News API US tech: {len(us_tech)}", file=sys.stderr)
+            for t in us_tech:
                 if t not in used:
                     scored.append((t, score_topic(t, 1)))
 
     else:  # general
-        # 1. News API general — relevant stories
+        # 1. News API India general — primary source
         if api_key:
-            news = fetch_news_api(api_key, "general")
-            print(f"News API general: {len(news)}", file=sys.stderr)
-            for t in news:
+            india_gen = fetch_news_api(api_key, "general", country="in")
+            print(f"News API India general: {len(india_gen)}", file=sys.stderr)
+            for t in india_gen:
                 if t not in used:
                     scored.append((t, score_topic(t, 0)))
 
-        # 2. Tavily — what people actually care about
+        # 2. News API US general
+        if api_key:
+            us_gen = fetch_news_api(api_key, "general", country="us")
+            print(f"News API US general: {len(us_gen)}", file=sys.stderr)
+            for t in us_gen:
+                if t not in used:
+                    scored.append((t, score_topic(t, 1)))
+
+        # 3. Tavily — what people actually care about
         if tavily_key:
             gen_queries = [
                 "health tips backed by science 2026",
@@ -320,6 +333,8 @@ def main():
                 "environment news affecting daily life",
                 "technology changes affecting everyone",
                 "science discoveries people can use",
+                "India news people care about",
+                "best habits for healthy life",
             ]
             tav = fetch_tavily(tavily_key, gen_queries)
             print(f"Tavily general: {len(tav)}", file=sys.stderr)
