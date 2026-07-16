@@ -38,7 +38,7 @@ def _task_delay_callback(output):
 
 @CrewBase
 class BlogWritingCrew():
-    """Blog Writing Crew — research + humanised writing + SEO + quality"""
+    """Blog Writing Crew — write → humanise → edit → seo"""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -46,7 +46,7 @@ class BlogWritingCrew():
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    _llm = LLM(model="gemini/gemma-4-31b-it", max_tokens=32768, timeout=300) #WR
+    _llm = LLM(model="gemini/gemma-4-31b-it", max_tokens=32768, timeout=300)
 
     @agent
     def writer(self) -> Agent:
@@ -78,6 +78,7 @@ class BlogWritingCrew():
     def editor(self) -> Agent:
         return Agent(
             config=self.agents_config["editor"],
+            tools=[ContentAnalysisTool()],
             llm=self._llm,
             verbose=True,
             max_retry_limit=3,
@@ -93,28 +94,10 @@ class BlogWritingCrew():
             max_retry_limit=3,
         )
 
-    @agent
-    def quality_reviewer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["quality_reviewer"],
-            tools=[ContentAnalysisTool(), SEOAnalysisTool()],
-            llm=self._llm,
-            verbose=True,
-            max_retry_limit=3,
-        )
-
-    @task
-    def planning_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["planning_task"],
-            timeout=300,
-        )
-
     @task
     def writing_task(self) -> Task:
         return Task(
             config=self.tasks_config["writing_task"],
-            context=[self.planning_task()],
             timeout=900,
         )
 
@@ -131,7 +114,7 @@ class BlogWritingCrew():
         return Task(
             config=self.tasks_config["editing_task"],
             context=[self.humanising_task()],
-            timeout=1200,
+            timeout=600,
         )
 
     @task
@@ -139,14 +122,6 @@ class BlogWritingCrew():
         return Task(
             config=self.tasks_config["seo_task"],
             context=[self.editing_task()],
-            timeout=600,
-        )
-
-    @task
-    def quality_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["quality_task"],
-            context=[self.seo_task()],
             timeout=600,
         )
 

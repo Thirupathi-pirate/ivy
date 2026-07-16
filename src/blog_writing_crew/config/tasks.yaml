@@ -1,20 +1,13 @@
-planning_task:
-  description: >
-    Research and outline a blog post about "{topic}".
-    1. Run news_search for "{topic} 2026" (max 3 sources)
-    2. Return: 2 headline options, 8 section headings with 2-3 key points each, 3-5 target keywords
-  expected_output: >
-    Structured outline with headlines, 8 sections, and keywords.
-  agent: writer
-
 writing_task:
   description: >
-    Write a 2500+ word blog post about "{topic}" using the outline above.
-    1. Run news_search (5 sources), wikipedia_search, hackernews_search, arxiv_search
-    2. Every claim needs a source URL. No fabrication.
-    3. Structure: Intro (~250 words), 8 sections (~300 words each), Conclusion (~150 words)
+    Write a 2500+ word blog post about "{topic}".
+    1. Plan first then write. Research: news_search (5 sources), wikipedia_search,
+       hackernews_search, arxiv_search
+    2. Every claim needs a real source URL. Never fabricate.
+    3. Structure: 2 headline options, Intro (~250 words), 8 sections (~300 words each),
+       Conclusion (~150 words), ## References
     4. Formatting: Emoji headers, bold stats, blockquotes, 10-15 inline [text](url) links,
-       1 mermaid diagram (```mermaid graph LR```), --- between sections, ## References at end
+       1 mermaid diagram (```mermaid graph LR```), --- between sections
     5. Verify: count words (>=2500) and links (>=10) before finishing
   expected_output: >
     2500+ word article with sources, formatting, and mermaid diagram.
@@ -31,38 +24,22 @@ humanising_task:
 
 editing_task:
   description: >
-    Polish for grammar, clarity, flow. Fact-check every claim.
-    1. Remove unsupported statements
-    2. Fix markdown formatting
-    3. Output ONLY the complete corrected article — no commentary
+    Polish grammar, flow, and run final quality check. Output ONLY the complete article.
+    1. Fix grammar, spelling, flow. Fact-check every claim — remove unsupported statements
+    2. Verify: 2500+ words (expand if short), 10+ real inline links, emoji headers,
+       mermaid diagram, blockquotes, bold stats, references section
+    3. Fix any missing elements silently
+    OUTPUT ONLY the complete corrected article. No commentary, no status.
   expected_output: >
     Clean, fact-checked, publication-ready article.
   agent: editor
 
 seo_task:
   description: >
-    Add SEO metadata. Prepend YAML frontmatter:
-    ---\ntitle: "<optimized, <60 chars>"\ntags: [tag1, tag2, tag3]\n---
-    1. Run extract_tags for 5-8 tags
-    2. Ensure keyword density 1-2%
-    3. Verify heading hierarchy and link count
-    4. Output: complete article with frontmatter — no extra commentary
+    Add SEO metadata. Prepend YAML frontmatter.
+    1. Extract 5-8 tags. Optimize title (<60 chars). Verify heading hierarchy
+    2. Prepend: ---\ntitle: "<title>"\ntags: [tag1, tag2, tag3]\n---
+    3. Output the complete article with frontmatter — no extra commentary
   expected_output: >
-    Article with YAML frontmatter, optimized title, tags, meta description.
+    Article with YAML frontmatter, optimized title and tags.
   agent: seo_optimizer
-
-quality_task:
-  description: >
-    Final quality gate. Check and fix silently:
-    1. Word count >= 2500 (expand if short)
-    2. Inline links >= 10 (add real URLs if missing — never use placeholder URLs like example.com)
-    3. Emoji headers on all sections
-    4. At least 1 mermaid diagram
-    5. Blockquotes for takeaways
-    6. Bold for key stats
-    7. References section with real source URLs
-    8. Grammar/spelling clean
-    OUTPUT ONLY the complete final article. No commentary, no status, no notes.
-  expected_output: >
-    Complete polished article ready for Jekyll. Nothing else.
-  agent: quality_reviewer
