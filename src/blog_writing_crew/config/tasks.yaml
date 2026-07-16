@@ -1,119 +1,129 @@
+planning_task:
+  description: >
+    Outline a blog post about "{topic}".
+
+    1. Run news_search for "{topic} {current_year}" (max 5 sources)
+    2. Run wikipedia_search for "{topic}" (background only)
+
+    Create outline with:
+    - 2 headline options
+    - 8 section headings with 2-3 key points each
+    - Target keywords
+
+    Exceptional quality work will be rewarded with a significant bonus!
+  expected_output: >
+    Structured outline: 2 headlines, 8 sections with key points, target keywords.
+  agent: writer
+
 writing_task:
   description: >
-    RESEARCH PHASE — Use ALL your available tools to gather information about "{topic}" for the year {current_year}:
+    Write a 2500+ word blog post about "{topic}" based on the outline provided.
 
-    1. news_search: Search for "{topic} {current_year}" and "reddit {topic}" and "site:reddit.com {topic}" to find web articles AND real Reddit discussions
-    2. wikipedia_search: Search for "{topic}" on Wikipedia for factual background, definitions, and key statistics
-    3. hackernews_search: Search for "{topic}" on Hacker News for tech community perspectives and discussions
-    4. arxiv_search: Search for "{topic}" on ArXiv for academic papers and research findings
-    5. openlibrary_search: Search for "{topic}" on Open Library for books and author references
-    6. rss_feed: If you find a relevant blog or publication in your searches, use rss_feed with its feed URL to get the latest articles
+    RESEARCH (use tools, keep results concise):
+    1. news_search: "{topic} {current_year}" — find 5-8 sources
+    2. wikipedia_search: "{topic}" — factual background
+    3. hackernews_search: "{topic}" — community perspectives
+    4. arxiv_search: "{topic}" — academic research
 
-    For each tool you use, note the SOURCE URLs of every article, discussion, paper, or book. Collect as many verifiable sources as possible.
+    RULES:
+    - Every claim MUST have a source URL. Never fabricate.
+    - Real quotes from Reddit/HN: attribute properly.
 
-    TRUTHFULNESS RULES:
-    - NEVER fabricate statistics, quotes, or data. Every claim MUST trace back to a source you found.
-    - If you cannot find a specific statistic, do not invent one — say "according to available sources" or omit it.
-    - Real user quotes from Reddit and HN are valuable — use them, but attribute them properly.
-    - If a source is behind a paywall or inaccessible, note that and do not fabricate its content.
-
-    WRITING PHASE — Now write a comprehensive, in-depth blog post about "{topic}" that reads like a high-quality Medium article — detailed, insightful, and thoroughly researched.
-
-    ⚠️ YOU MUST FOLLOW EVERY RULE BELOW EXACTLY. DO NOT SKIP, IGNORE, OR PARTIALLY FOLLOW ANY INSTRUCTION. FAILURE TO FOLLOW ANY RULE WILL RESULT IN THE TASK BEING MARKED AS FAILED.
-
-    ⚠️ WORD COUNT ENFORCEMENT — THIS IS CRITICAL:
-    The post MUST be at least 2500 words long (targeting 14 minutes read time).
-    STRICTLY follow this structure to reach the word count:
-    - Introduction: ~250 words (hook + context + thesis)
-    - 8 sections: ~300 words each (= 2400 words)
+    STRUCTURE (target 2800 words):
+    - Intro: ~250 words (hook + context)
+    - 8 sections: ~300 words each
     - Conclusion: ~150 words
-    - Total: ~2800 words (buffer over the 2500 minimum)
-    DO NOT stop writing until you have written at least 2500 words.
-    When you think you are done, COUNT the number of words. If below 2500, KEEP WRITING.
 
-    The post should:
-    - Open with a strong, engaging hook that draws the reader in
-    - Weave real facts, statistics, quotes, and data throughout — each with inline source links
-    - Include 8 well-developed sections with clear subheadings (each section ~300 words)
-    - Use specific examples, case studies, and real user perspectives from your research
-    - End with a thoughtful conclusion that ties everything together
-    - Use clean markdown formatting
-    - Include inline markdown links to sources using [text](url) format throughout the body
+    FORMATTING:
+    - Emoji headers (🚀 🔬 📊 💡 🌍 🎯 🤖 📈)
+    - **Bold** key stats
+    - > Blockquotes for takeaways
+    - 10-15 inline [text](url) links distributed throughout
+    - 1 Mermaid diagram (```mermaid graph LR```)
+    - --- between sections
+    - ## References section at end
 
-    VISUAL FORMATTING REQUIREMENTS:
-    - Use relevant emoji at the start of each section header (e.g., 🚀 for future topics, 🔬 for science, 📊 for data, 💡 for insights, 🌍 for global topics, 🎯 for trends, 🤖 for AI/tech, 📈 for growth)
-    - Use **bold** for key statistics and important terms
-    - Include brief bullet lists (with hyphens) when comparing points or listing items
-    - Use blockquotes (with > ) for important quotes, user perspectives, or key takeaways
-    - Include a Mermaid diagram where appropriate — use fenced code blocks with the mermaid language tag:
-      ```mermaid
-      graph LR or graph TD for flowcharts
-      ```
-      For example, use a flow diagram to show a process, a pie chart for data breakdowns, or a sequence diagram for timelines
-    - Add a horizontal rule (---) between major sections for visual separation
-    - Use numbered lists for step-by-step processes
-    - LaTeX math ($...$, $$...$$, \(...\), \[...\], \text, \rightarrow, etc.) is SUPPORTED by the blog theme via MathJax. Use it freely for formulas, symbols, and technical notation.
+    COUNT words before finishing. If <2500, expand sections.
+    COUNT links. If <10, add more.
 
-    SELF-VERIFICATION (do this BEFORE finishing):
-    - Re-read every claim. Does each one have a source URL?
-    - Are all statistics backed by real data from your research?
-    - Are all quotes attributed to real people or sources?
-    - COUNT the total number of words. Is it at least 2500? If NOT, go back and expand each section by adding more details, examples, and analysis until you reach the minimum.
-
-    Make the post visually scannable and engaging. Think Medium meets a modern tech blog.
+    Exceptional quality work will be rewarded with a significant bonus!
   expected_output: >
-    A well-researched, comprehensive blog post in rich markdown format
-    that is AT LEAST 2500 words long (measured by word count, not character count).
-    Has 8 sections plus intro and conclusion. Includes emoji headers, bold stats,
-    bullet lists, blockquotes, a mermaid diagram, and inline source links.
-    EVERY claim is traceable to a verifiable source. No fabricated data.
-    If the post is shorter than 2500 words, the task is considered FAILED.
+    2500+ word blog post with emoji headers, bold stats, blockquotes, mermaid diagram,
+    10+ inline links, References section. Every claim sourced.
   agent: writer
 
 humanising_task:
   description: >
-    Rewrite the blog post to sound completely natural and human.
-    Remove all AI tone, corporate jargon, and formal language.
-    Make it sound like a knowledgeable friend explaining the topic
-    in a warm, conversational way. Use simple words, natural sentence
-    flow, and a friendly tone.
+    Rewrite the blog post to sound natural and human — like a knowledgeable friend
+    explaining the topic. Remove AI tone, corporate jargon, formal language.
 
-    AUTHENTICITY RULES:
-    - Keep ALL facts, data, and source attributions intact — do not remove citations
-    - Do NOT add fabricated anecdotes, fake user quotes, or imaginary examples
-    - Do NOT soften real user perspectives from Reddit/HN into generic statements
-    - If something seems unsourced or unverifiable, REMOVE the claim entirely — do NOT add [UNVERIFIED] markers
-    - PRESERVE all markdown formatting: emoji, bold, bullet lists, blockquotes, mermaid code blocks, horizontal rules, and links
+    KEEP: All facts, data, source links, markdown formatting.
+    REMOVE: Fabricated anecdotes, fake quotes, unsupported claims.
+    NEVER: Add [UNVERIFIED] markers — just remove unsourced claims.
 
-    Think: warm, clear, human — but honest, authentic, and truthful.
+    Exceptional quality work will be rewarded with a significant bonus!
   expected_output: >
-    The same blog post rewritten in a natural, conversational, human tone.
-    All key facts, data, source citations, and markdown formatting preserved.
-    No fabricated content added.
+    Same post in conversational tone. All facts/links/formatting preserved. No fabricated content.
   agent: humaniser
 
 editing_task:
   description: >
-    Review the humanised blog post for two categories of issues:
+    Polish the blog post for grammar, clarity, flow. Then fact-check every claim.
 
-    FORMAT & STYLE:
-    - Grammar, spelling, and punctuation
-    - Markdown formatting issues
-    - Clarity and readability
-    - Consistent tone (preserve the natural human voice)
+    CHECK:
+    - Grammar, spelling, punctuation
+    - Every statistic/quote has a source link
+    - Suspicious claims: remove or rephrase
+    - Links use [text](url) format
+    - Mermaid/emoji formatting correct
 
-    FACT-CHECKING:
-    - Verify that every statistic, quote, and claim has a corresponding source link
-    - If a claim cannot be verified: either add the missing source, rephrase as a general observation, or remove it entirely
-    - If a statistic looks suspicious or cannot be verified, remove it
-    - Ensure all inline links use correct markdown format: [text](url)
-    - Ensure all mermaid code blocks, emoji, and special formatting are correctly formed
+    OUTPUT: Publication-ready post. No [UNVERIFIED] markers. No fabricated support.
 
-    CRITICAL: The final output must be publication-ready. Do NOT leave [UNVERIFIED] or any editor markers in the text. Every claim must either have a source or be removed/rephrased.
-    Do NOT strip any visual formatting. Do NOT add fabricated support for weak claims.
+    Exceptional quality work will be rewarded with a significant bonus!
   expected_output: >
-    A polished, publication-ready blog post in rich markdown format,
-    clean and professional while keeping the natural human tone and
-    all visual elements (emoji, mermaid, lists, blockquotes, links).
-    Every claim is properly sourced. No [UNVERIFIED] markers or editor artifacts.
+    Polished, fact-checked blog post. Clean markdown, natural tone, all claims sourced.
   agent: editor
+
+seo_task:
+  description: >
+    Optimize for search engines.
+
+    1. Run seo_analysis for baseline score
+    2. Title: compelling, <60 chars
+    3. Meta description: 150-160 chars
+    4. Keyword density: 1-2%
+    5. Header hierarchy: H1 > H2 > H3
+    6. Verify 10+ inline links
+    7. Run extract_tags for 5-8 tags
+
+    OUTPUT FORMAT (prepend to content):
+    ---
+    title: "<optimized title>"
+    tags: [tag1, tag2, tag3]
+    ---
+
+    Exceptional quality work will be rewarded with a significant bonus!
+  expected_output: >
+    SEO-optimized post with YAML frontmatter, proper headers, 10+ links, meta description.
+  agent: seo_optimizer
+
+quality_task:
+  description: >
+    Final quality check. Run content_analysis, fix issues.
+
+    CHECKS:
+    1. Word count >= 2500 (expand if short)
+    2. Inline links >= 10 (add if missing)
+    3. Emoji headers on all sections
+    4. At least 1 mermaid diagram
+    5. Blockquotes for takeaways
+    6. Bold for key stats
+    7. References section exists
+    8. Grammar/spelling clean
+
+    OUTPUT: The COMPLETE article (not a report). Ready for Jekyll.
+
+    Exceptional quality work will be rewarded with a significant bonus!
+  expected_output: >
+    Complete, polished blog post. 2500+ words, 10+ links, emoji headers, mermaid, references.
+  agent: quality_reviewer
