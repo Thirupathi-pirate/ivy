@@ -1,16 +1,16 @@
 writing_task:
   description: >
-    Write a 2500+ word blog post about "{topic}".
+    Write a 2000+ word blog post about "{topic}".
     1. Plan first then write. Research: news_search (5 sources), wikipedia_search,
        hackernews_search, arxiv_search
     2. Every claim needs a real source URL. Never fabricate.
-    3. Structure: 2 headline options, Intro (~250 words), 8 sections (~300 words each),
+    3. Structure: 2 headline options, Intro (~200 words), 6 sections (~250 words each),
        Conclusion (~150 words), ## References
-    4. Formatting: Emoji headers, bold stats, blockquotes, 10-15 inline [text](url) links,
+    4. Formatting: Emoji headers, bold stats, blockquotes, 8-12 inline [text](url) links,
        1 mermaid diagram (```mermaid graph LR```), --- between sections
-    5. Verify: count words (>=2500) and links (>=10) before finishing
+    5. Verify: count words (>=2000) and links (>=8) before finishing
   expected_output: >
-    2500+ word article with sources, formatting, and mermaid diagram.
+    2000+ word article with sources, formatting, and mermaid diagram.
   agent: writer
 
 humanising_task:
@@ -27,7 +27,7 @@ finalise_task:
     Final polish, SEO, and quality check. Output ONLY the complete final article.
     1. Fix grammar, spelling, flow. Remove unsupported statements
     2. Add YAML frontmatter: title (<60 chars), tags: [5-8 tags]
-    3. Verify: 2500+ words (expand if short), 10+ real inline links, emoji headers,
+    3. Verify: 2000+ words (expand if short), 8+ real inline links, emoji headers,
        mermaid diagram, blockquotes, bold stats, references section
     4. Fix any missing elements silently
     OUTPUT ONLY the complete article with frontmatter. No commentary, no status.
