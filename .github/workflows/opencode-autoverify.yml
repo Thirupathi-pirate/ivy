@@ -64,7 +64,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # ── Only OpenCode PRs: auto-fix loop ─────────────────
+      # ── Only if PR has 'autofix' label: auto-fix loop ───
 
       - name: Check retry limit
         id: retry
@@ -98,7 +98,8 @@ jobs:
       - name: Auto-fix and push
         if: |
           steps.verify.outcome == 'failure' &&
-          steps.retry.outputs.exhausted != 'true'
+          steps.retry.outputs.exhausted != 'true' &&
+          contains(github.event.pull_request.labels.*.name, 'autofix')
         run: |
           uv tool install ruff -q
           ruff check --fix . 2>&1 || true

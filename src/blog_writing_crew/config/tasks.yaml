@@ -3,7 +3,7 @@ writing_task:
     Write a 2000+ word blog post about "{topic}".
     1. Plan first then write. Research: news_search (5 sources), wikipedia_search,
        hackernews_search, arxiv_search
-    2. Every claim needs a real source URL. Never fabricate.
+    2. Every claim needs a real source URL. Never fabricate. NO reference-style [1] or [^1] — only inline [text](url) links
     3. Structure: 2 headline options, Intro (~200 words), 6 sections (~250 words each),
        Conclusion (~150 words), ## References
     4. Formatting: Emoji headers, bold stats, blockquotes, 8-12 inline [text](url) links,
