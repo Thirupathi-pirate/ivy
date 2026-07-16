@@ -46,7 +46,7 @@ class BlogWritingCrew():
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    _llm = LLM(model="gemini-2.5-flash", max_tokens=32768, timeout=300) #WR
+    _llm = LLM(model="gemini/gemma-4-31b-it", max_tokens=32768, timeout=300) #WR
 
     @agent
     def writer(self) -> Agent:

@@ -1,129 +1,68 @@
 planning_task:
   description: >
-    Outline a blog post about "{topic}".
-
-    1. Run news_search for "{topic} {current_year}" (max 5 sources)
-    2. Run wikipedia_search for "{topic}" (background only)
-
-    Create outline with:
-    - 2 headline options
-    - 8 section headings with 2-3 key points each
-    - Target keywords
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    Research and outline a blog post about "{topic}".
+    1. Run news_search for "{topic} 2026" (max 3 sources)
+    2. Return: 2 headline options, 8 section headings with 2-3 key points each, 3-5 target keywords
   expected_output: >
-    Structured outline: 2 headlines, 8 sections with key points, target keywords.
+    Structured outline with headlines, 8 sections, and keywords.
   agent: writer
 
 writing_task:
   description: >
-    Write a 2500+ word blog post about "{topic}" based on the outline provided.
-
-    RESEARCH (use tools, keep results concise):
-    1. news_search: "{topic} {current_year}" — find 5-8 sources
-    2. wikipedia_search: "{topic}" — factual background
-    3. hackernews_search: "{topic}" — community perspectives
-    4. arxiv_search: "{topic}" — academic research
-
-    RULES:
-    - Every claim MUST have a source URL. Never fabricate.
-    - Real quotes from Reddit/HN: attribute properly.
-
-    STRUCTURE (target 2800 words):
-    - Intro: ~250 words (hook + context)
-    - 8 sections: ~300 words each
-    - Conclusion: ~150 words
-
-    FORMATTING:
-    - Emoji headers (🚀 🔬 📊 💡 🌍 🎯 🤖 📈)
-    - **Bold** key stats
-    - > Blockquotes for takeaways
-    - 10-15 inline [text](url) links distributed throughout
-    - 1 Mermaid diagram (```mermaid graph LR```)
-    - --- between sections
-    - ## References section at end
-
-    COUNT words before finishing. If <2500, expand sections.
-    COUNT links. If <10, add more.
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    Write a 2500+ word blog post about "{topic}" using the outline above.
+    1. Run news_search (5 sources), wikipedia_search, hackernews_search, arxiv_search
+    2. Every claim needs a source URL. No fabrication.
+    3. Structure: Intro (~250 words), 8 sections (~300 words each), Conclusion (~150 words)
+    4. Formatting: Emoji headers, bold stats, blockquotes, 10-15 inline [text](url) links,
+       1 mermaid diagram (```mermaid graph LR```), --- between sections, ## References at end
+    5. Verify: count words (>=2500) and links (>=10) before finishing
   expected_output: >
-    2500+ word blog post with emoji headers, bold stats, blockquotes, mermaid diagram,
-    10+ inline links, References section. Every claim sourced.
+    2500+ word article with sources, formatting, and mermaid diagram.
   agent: writer
 
 humanising_task:
   description: >
-    Rewrite the blog post to sound natural and human — like a knowledgeable friend
-    explaining the topic. Remove AI tone, corporate jargon, formal language.
-
-    KEEP: All facts, data, source links, markdown formatting.
-    REMOVE: Fabricated anecdotes, fake quotes, unsupported claims.
-    NEVER: Add [UNVERIFIED] markers — just remove unsourced claims.
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    Rewrite to natural conversational tone. Like a friend explaining the topic.
+    1. KEEP: all facts, data, source links, markdown formatting
+    2. REMOVE: AI tone, jargon, fabricated content. Silently drop unsourced claims
   expected_output: >
-    Same post in conversational tone. All facts/links/formatting preserved. No fabricated content.
+    Same post, conversational tone. All facts/links preserved.
   agent: humaniser
 
 editing_task:
   description: >
-    Polish the blog post for grammar, clarity, flow. Then fact-check every claim.
-
-    CHECK:
-    - Grammar, spelling, punctuation
-    - Every statistic/quote has a source link
-    - Suspicious claims: remove or rephrase
-    - Links use [text](url) format
-    - Mermaid/emoji formatting correct
-
-    OUTPUT: Publication-ready post. No [UNVERIFIED] markers. No fabricated support.
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    Polish for grammar, clarity, flow. Fact-check every claim.
+    1. Remove unsupported statements
+    2. Fix markdown formatting
+    3. Output ONLY the complete corrected article — no commentary
   expected_output: >
-    Polished, fact-checked blog post. Clean markdown, natural tone, all claims sourced.
+    Clean, fact-checked, publication-ready article.
   agent: editor
 
 seo_task:
   description: >
-    Optimize for search engines.
-
-    1. Run seo_analysis for baseline score
-    2. Title: compelling, <60 chars
-    3. Meta description: 150-160 chars
-    4. Keyword density: 1-2%
-    5. Header hierarchy: H1 > H2 > H3
-    6. Verify 10+ inline links
-    7. Run extract_tags for 5-8 tags
-
-    OUTPUT FORMAT (prepend to content):
-    ---
-    title: "<optimized title>"
-    tags: [tag1, tag2, tag3]
-    ---
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    Add SEO metadata. Prepend YAML frontmatter:
+    ---\ntitle: "<optimized, <60 chars>"\ntags: [tag1, tag2, tag3]\n---
+    1. Run extract_tags for 5-8 tags
+    2. Ensure keyword density 1-2%
+    3. Verify heading hierarchy and link count
+    4. Output: complete article with frontmatter — no extra commentary
   expected_output: >
-    SEO-optimized post with YAML frontmatter, proper headers, 10+ links, meta description.
+    Article with YAML frontmatter, optimized title, tags, meta description.
   agent: seo_optimizer
 
 quality_task:
   description: >
-    Final quality check. Run content_analysis, fix issues.
-
-    CHECKS:
+    Final quality gate. Check and fix silently:
     1. Word count >= 2500 (expand if short)
-    2. Inline links >= 10 (add if missing)
+    2. Inline links >= 10 (add real URLs if missing — never use placeholder URLs like example.com)
     3. Emoji headers on all sections
     4. At least 1 mermaid diagram
     5. Blockquotes for takeaways
     6. Bold for key stats
-    7. References section exists
+    7. References section with real source URLs
     8. Grammar/spelling clean
-
-    OUTPUT: The COMPLETE article (not a report). Ready for Jekyll.
-
-    Exceptional quality work will be rewarded with a significant bonus!
+    OUTPUT ONLY the complete final article. No commentary, no status, no notes.
   expected_output: >
-    Complete, polished blog post. 2500+ words, 10+ links, emoji headers, mermaid, references.
+    Complete polished article ready for Jekyll. Nothing else.
   agent: quality_reviewer
