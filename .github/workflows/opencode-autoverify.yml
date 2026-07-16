@@ -1,0 +1,104 @@
+name: OpenCode Auto-Verify
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+
+jobs:
+  verify:
+    if: contains(github.event.pull_request.labels.*.name, 'autofix')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install deps
+        run: uv sync
+
+      - name: Run verification
+        id: verify
+        continue-on-error: true
+        run: |
+          rc=0
+          echo "## Verification Results" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Python lint (ruff)" >> $GITHUB_STEP_SUMMARY
+          uv tool install ruff -q
+          ruff check --output-format=github . 2>&1 | tee -a /tmp/verify.log || rc=$?
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Python syntax (compileall)" >> $GITHUB_STEP_SUMMARY
+          python -m compileall src/ 2>&1 | tee -a /tmp/verify.log || rc=$?
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f tsconfig.json ]; then
+            echo "### TypeScript type-check" >> $GITHUB_STEP_SUMMARY
+            npm ci --silent 2>/dev/null && npx tsc --noEmit 2>&1 | tee -a /tmp/verify.log || rc=$?
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          exit $rc
+
+      - name: Checks passed
+        if: steps.verify.outcome == 'success'
+        run: |
+          gh pr edit ${{ github.event.number }} \
+            --remove-label "autofix" \
+            --add-label "autofix-passed"
+          gh pr comment ${{ github.event.number }} --body "Auto-verify passed - all checks green."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check retry limit
+        id: retry
+        if: steps.verify.outcome == 'failure'
+        run: |
+          labels=$(gh pr view ${{ github.event.number }} --json labels --jq '.labels[].name')
+          count=$(echo "$labels" | grep -cE '^autofix-retry-[0-9]+$' || true)
+          if [ "$count" -ge 3 ]; then
+            echo "exhausted=true" >> $GITHUB_OUTPUT
+          else
+            echo "retry=$count" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Give up after 3 retries
+        if: steps.verify.outcome == 'failure' && steps.retry.outputs.exhausted == 'true'
+        run: |
+          gh pr edit ${{ github.event.number }} \
+            --remove-label "autofix" \
+            --add-label "autofix-failed"
+          gh pr comment ${{ github.event.number }} --body "Could not auto-fix after 3 attempts. Manual review needed."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Auto-fix and push
+        if: steps.verify.outcome == 'failure' && steps.retry.outputs.exhausted != 'true'
+        run: |
+          uv tool install ruff -q
+          ruff check --fix . 2>&1 || true
+
+          git config user.name "opencode[bot]"
+          git config user.email "bot@opencode.ai"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No auto-fixable changes."
+          else
+            git commit -m "autofix: apply lint fixes [skip ci]"
+            git push
+          fi
+
+          gh pr edit ${{ github.event.number }} \
+            --add-label "autofix-retry-${{ steps.retry.outputs.retry }}"
+        env:
+          GH_TOKEN: ${{ github.token }}

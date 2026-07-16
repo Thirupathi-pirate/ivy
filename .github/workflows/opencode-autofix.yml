@@ -37,3 +37,17 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         with:
           model: huggingface/zai-org/GLM-4.5-Air
+
+      - name: Tag PR for auto-verification
+        run: |
+          sleep 10
+          PR=$(gh pr list \
+            --state open \
+            --author "github-actions[bot]" \
+            --json number,createdAt,headRepository \
+            --jq '[.[] | select(.headRepository.name == "${{ github.event.repository.name }}")] | max_by(.createdAt).number')
+          if [ -n "$PR" ] && [ "$PR" != "null" ]; then
+            gh pr edit "$PR" --add-label "autofix"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
