@@ -25,25 +25,12 @@ humaniser:
 
 editor:
   role: >
-    Senior Editor
+    Senior Editor & SEO
   goal: >
-    Polish grammar, spelling, flow. Fact-check every claim against sources.
-    Remove or rephrase unsupported statements. Final quality gate: verify
-    2500+ words, 10+ inline links, emoji headers, mermaid diagram,
-    blockquotes, bold stats, references. Fix issues silently.
-    Output ONLY the complete corrected article — no commentary, no status.
+    Polish grammar, flow, add SEO metadata, and run final quality check.
+    Fix issues silently. Add YAML frontmatter with title (<60 chars) and 5-8 tags.
+    Verify: 2500+ words, 10+ inline links, emoji headers, mermaid diagram,
+    blockquotes, bold stats, references. Output ONLY the complete article.
   backstory: >
-    You catch every typo and every lie. Skeptical of every claim. If a stat
-    lacks a source, delete it. If a quote seems invented, remove it.
-    You are the last checkpoint before publication — nothing slips past.
-
-seo_optimizer:
-  role: >
-    SEO Optimizer
-  goal: >
-    Add YAML frontmatter, optimize title (<60 chars), extract 5-8 tags,
-    verify heading hierarchy. Output the complete article with
-    frontmatter prepended — no commentary.
-  backstory: >
-    You make content discoverable without keyword-stuffing. Invisible SEO
-    that helps readers find the article.
+    You catch every typo and every lie. You make content discoverable without
+    keyword-stuffing. Last checkpoint before publication — nothing slips past.

@@ -25,20 +25,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Delay between tasks to avoid hitting Gemini free tier rate limit (16K tokens/min)
-TASK_DELAY_SECONDS = 45
-
-
-def _task_delay_callback(output):
-    """Called after each task completes — adds delay to let rate limit reset."""
-    logger.info(f"Task completed. Waiting {TASK_DELAY_SECONDS}s for rate limit reset...")
-    print(f"\n⏳ Task done. Waiting {TASK_DELAY_SECONDS}s for API rate limit reset...\n")
-    time.sleep(TASK_DELAY_SECONDS)
-
 
 @CrewBase
 class BlogWritingCrew():
-    """Blog Writing Crew — write → humanise → edit → seo"""
+    """Blog Writing Crew — write → humanise → finalise"""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -78,17 +68,7 @@ class BlogWritingCrew():
     def editor(self) -> Agent:
         return Agent(
             config=self.agents_config["editor"],
-            tools=[ContentAnalysisTool()],
-            llm=self._llm,
-            verbose=True,
-            max_retry_limit=3,
-        )
-
-    @agent
-    def seo_optimizer(self) -> Agent:
-        return Agent(
-            config=self.agents_config["seo_optimizer"],
-            tools=[SEOAnalysisTool(), TagExtractionTool()],
+            tools=[SEOAnalysisTool(), ContentAnalysisTool(), TagExtractionTool()],
             llm=self._llm,
             verbose=True,
             max_retry_limit=3,
@@ -110,18 +90,10 @@ class BlogWritingCrew():
         )
 
     @task
-    def editing_task(self) -> Task:
+    def finalise_task(self) -> Task:
         return Task(
-            config=self.tasks_config["editing_task"],
+            config=self.tasks_config["finalise_task"],
             context=[self.humanising_task()],
-            timeout=600,
-        )
-
-    @task
-    def seo_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["seo_task"],
-            context=[self.editing_task()],
             timeout=600,
         )
 
@@ -131,7 +103,6 @@ class BlogWritingCrew():
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            step_callback=_task_delay_callback,
             verbose=True,
         )
 
