@@ -1,4 +1,4 @@
-name: OpenCode Auto-Verify
+name: PR Checks + Auto-Fix
 
 on:
   pull_request:
@@ -7,7 +7,6 @@ on:
 
 jobs:
   verify:
-    if: contains(github.event.pull_request.labels.*.name, 'autofix')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,19 +47,30 @@ jobs:
 
           exit $rc
 
+      # ── ALL PRs: report results ──────────────────────────
+
       - name: Checks passed
         if: steps.verify.outcome == 'success'
         run: |
-          gh pr edit ${{ github.event.number }} \
-            --remove-label "autofix" \
-            --add-label "autofix-passed"
-          gh pr comment ${{ github.event.number }} --body "Auto-verify passed - all checks green."
+          gh pr comment ${{ github.event.number }} --body "✅ All checks passed — lint, syntax, types OK."
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Checks failed (report)
+        if: steps.verify.outcome == 'failure'
+        run: |
+          gh pr comment ${{ github.event.number }} --body \
+            "❌ Verification failed. Details in the Actions log."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ── Only OpenCode PRs: auto-fix loop ─────────────────
+
       - name: Check retry limit
         id: retry
-        if: steps.verify.outcome == 'failure'
+        if: |
+          steps.verify.outcome == 'failure' &&
+          contains(github.event.pull_request.labels.*.name, 'autofix')
         run: |
           labels=$(gh pr view ${{ github.event.number }} --json labels --jq '.labels[].name')
           count=$(echo "$labels" | grep -cE '^autofix-retry-[0-9]+$' || true)
@@ -73,17 +83,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Give up after 3 retries
-        if: steps.verify.outcome == 'failure' && steps.retry.outputs.exhausted == 'true'
+        if: |
+          steps.verify.outcome == 'failure' &&
+          steps.retry.outputs.exhausted == 'true'
         run: |
           gh pr edit ${{ github.event.number }} \
             --remove-label "autofix" \
             --add-label "autofix-failed"
-          gh pr comment ${{ github.event.number }} --body "Could not auto-fix after 3 attempts. Manual review needed."
+          gh pr comment ${{ github.event.number }} --body \
+            "Could not auto-fix after 3 attempts. Manual review needed."
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Auto-fix and push
-        if: steps.verify.outcome == 'failure' && steps.retry.outputs.exhausted != 'true'
+        if: |
+          steps.verify.outcome == 'failure' &&
+          steps.retry.outputs.exhausted != 'true'
         run: |
           uv tool install ruff -q
           ruff check --fix . 2>&1 || true
