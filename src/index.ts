@@ -312,7 +312,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         parse_mode: "Markdown",
       });
       const ghResp = await fetch(
-        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/daily-telegram.yml/dispatches`,
+        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/blog-writer.yml/dispatches`,
         {
           method: "POST",
           headers: {
@@ -841,7 +841,7 @@ async function handleDiscordCommand(env: Env, interaction: any, token: string) {
       }
       console.log("WRITE_CMD: dispatching to GitHub, topic:", topic);
       const ghResp = await fetch(
-        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/daily-telegram.yml/dispatches`,
+        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/blog-writer.yml/dispatches`,
         {
           method: "POST",
           headers: {

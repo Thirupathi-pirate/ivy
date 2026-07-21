@@ -1,0 +1,185 @@
+name: Daily Blog Writer
+
+on:
+  schedule:
+    - cron: '30 23 * * *'    # 5:00 AM IST → General
+    - cron: '30 4 * * *'     # 10:00 AM IST → Tech
+    - cron: '30 9 * * *'     # 3:00 PM IST → General
+    - cron: '30 14 * * *'    # 8:00 PM IST → Tech
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Blog topic to write about'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+env:
+  PYTHON_VERSION: '3.11'
+  RUBY_VERSION: '3.3'
+
+jobs:
+  run-crew:
+    runs-on: ubuntu-latest
+    outputs:
+      post_url: ${{ steps.url.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python deps
+        run: uv sync
+
+      - name: Determine blog topic
+        env:
+          GH_EVENT: ${{ github.event_name }}
+GH_TOPIC: ${{ inputs.topic }}
+CURRENTS_API_KEY: ${{ secrets.CURRENTS_API_KEY }}
+        run: |
+          if [ "$GH_EVENT" = "workflow_dispatch" ] && [ -n "$GH_TOPIC" ]; then
+            echo "TOPIC=$GH_TOPIC" >> $GITHUB_ENV
+            echo "TYPE=general" >> $GITHUB_ENV
+          else
+HOUR=$(TZ='Asia/Kolkata' date +%H)
+if [ "$HOUR" = "10" ] || [ "$HOUR" = "20" ]; then
+TYPE="tech"
+else
+TYPE="general"
+fi
+            TOPIC=$(uv run python scripts/find_trending_topic.py --type $TYPE)
+            echo "TOPIC=$TOPIC" >> $GITHUB_ENV
+            echo "TYPE=$TYPE" >> $GITHUB_ENV
+fi
+          echo "Using topic: $TOPIC"
+
+      - name: Run blog writing crew
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          TOPIC: ${{ env.TOPIC }}
+        run: uv run python -c "from blog_writing_crew.main import run; run()"
+
+      - name: Publish post to Jekyll source
+        if: success()
+        id: publish
+        env:
+          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
+        run: |
+          uv run python scripts/publish_post.py "${{ env.TOPIC }}"
+
+      - name: Commit post to main (preserve for future builds)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add blog-source/_posts/
+          NEW_POST=$(git diff --name-only --cached -- blog-source/_posts/ | head -1)
+          git commit -m "Add post: ${NEW_POST##*/} [skip ci]" || echo "No new post to commit"
+          git pull --rebase --autostash || true
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+          working-directory: blog-source
+
+      - name: Build Jekyll site
+        run: |
+          JEKYLL_ENV=production bundle exec jekyll build
+        working-directory: blog-source
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: blog-source/_site
+          publish_branch: gh-pages
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          cname: blog.aaruvi.space
+
+      - name: Push commit to main
+        if: success()
+        run: git push || true
+
+      - name: Build post URL
+        id: url
+        run: |
+          SLUG=$(echo "${{ env.TOPIC }}" | uv run python -c "import sys,re; t=sys.stdin.read().strip().lower(); t=re.sub(r'[^\w\s-]','',t); t=re.sub(r'[\s_]+','-',t); t=re.sub(r'-+','-',t); print(t.strip('-'))")
+          echo "url=https://blog.aaruvi.space/$SLUG/" >> $GITHUB_OUTPUT
+
+      - name: Meta (date + thought + greeting)
+        id: meta
+        run: |
+          echo "date=$(date +'%d-%m-%Y')" >> $GITHUB_OUTPUT
+          IST_HOUR=$(TZ='Asia/Kolkata' date +'%H')
+          if [ "$IST_HOUR" -ge 5 ] && [ "$IST_HOUR" -lt 12 ]; then
+            GREETING="🌅 Morning Blog"
+          elif [ "$IST_HOUR" -ge 12 ] && [ "$IST_HOUR" -lt 17 ]; then
+            GREETING="☀️ Afternoon Blog"
+          elif [ "$IST_HOUR" -ge 17 ] && [ "$IST_HOUR" -lt 21 ]; then
+            GREETING="🌆 Evening Blog"
+          else
+            GREETING="🌙 Night Blog"
+          fi
+          echo "greeting=$GREETING" >> $GITHUB_OUTPUT
+          QUOTE_JSON=$(curl -s --max-time 5 https://motivational-spark-api.vercel.app/api/quotes/random || echo '{}')
+          CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('quote','Keep learning!'))" 2>/dev/null || echo "Keep learning!")
+          AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('author','Unknown'))" 2>/dev/null || echo "Unknown")
+          echo "thought<<EOF" >> $GITHUB_OUTPUT
+          echo "\"$CONTENT\" ✨" >> $GITHUB_OUTPUT
+          echo "   — $AUTHOR" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send success notification
+        if: success()
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            ${{ steps.meta.outputs.greeting }} — ${{ steps.meta.outputs.date }}
+
+            ${{ env.TOPIC }}
+
+            Read: ${{ steps.url.outputs.url }}
+
+            ✨ ${{ steps.meta.outputs.thought }}
+
+      - name: Send failure notification
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed 2>&1)
+          FAILED_STEP=$(echo "$LOGS" | grep -m1 '##\[group\]' | sed 's/.*##\[group\]//' || echo "unknown")
+          ERROR_MSG=$(echo "$LOGS" | grep -iE '(Error:|exit code |traceback|Exception)' | head -3)
+          {
+            echo "❌ Blog Writer Failed"
+            echo ""
+            echo "Workflow: ${{ github.workflow }}"
+            echo "Trigger: ${{ github.event_name }}"
+            echo "Topic: ${{ env.TOPIC }}"
+            echo ""
+            echo "Failed step: ${FAILED_STEP}"
+            echo ""
+            echo "Error:"
+            echo "${ERROR_MSG:-No details captured}"
+            echo ""
+            echo "Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/telegram_msg.txt
+
+      - name: Send failure Telegram
+        if: failure()
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message_file: /tmp/telegram_msg.txt
