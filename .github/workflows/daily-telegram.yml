@@ -1,11 +1,11 @@
 name: Daily Blog Writer
 
 on:
-schedule:
-- cron: '30 23 * * *'    # 5:00 AM IST → General
-- cron: '30 4 * * *'     # 10:00 AM IST → Tech
-- cron: '30 9 * * *'     # 3:00 PM IST → General
-- cron: '30 14 * * *'    # 8:00 PM IST → Tech
+  schedule:
+    - cron: '30 23 * * *'    # 5:00 AM IST → General
+    - cron: '30 4 * * *'     # 10:00 AM IST → Tech
+    - cron: '30 9 * * *'     # 3:00 PM IST → General
+    - cron: '30 14 * * *'    # 8:00 PM IST → Tech
   workflow_dispatch:
     inputs:
       topic:
