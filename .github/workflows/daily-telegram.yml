@@ -130,7 +130,7 @@ fi
             GREETING="🌙 Night Blog"
           fi
           echo "greeting=$GREETING" >> $GITHUB_OUTPUT
-          QUOTE_JSON=$(curl -s --max-time 5 https://dummyjson.com/quotes/random || echo '{}')
+          QUOTE_JSON=$(curl -s --max-time 5 https://motivational-spark-api.vercel.app/api/quotes/random || echo '{}')
           CONTENT=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('quote','Keep learning!'))" 2>/dev/null || echo "Keep learning!")
           AUTHOR=$(echo "$QUOTE_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('author','Unknown'))" 2>/dev/null || echo "Unknown")
           echo "thought<<EOF" >> $GITHUB_OUTPUT
