@@ -57,7 +57,7 @@ fi
             echo "TOPIC=$TOPIC" >> $GITHUB_ENV
             echo "TYPE=$TYPE" >> $GITHUB_ENV
 fi
-          echo "Using topic: ${{ env.TOPIC }}"
+          echo "Using topic: $TOPIC"
 
       - name: Run blog writing crew
         env:

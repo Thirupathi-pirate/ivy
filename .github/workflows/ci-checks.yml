@@ -52,6 +52,11 @@ sys.exit(exit_code)
           uv tool install pip-audit
           pip-audit --strict --skip-editable 2>&1 | tail -20
 
+      - name: TypeScript typecheck
+        run: |
+          npm ci --silent
+          npx tsc --noEmit
+
   codeql:
     runs-on: ubuntu-latest
     steps:
