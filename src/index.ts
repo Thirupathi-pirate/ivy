@@ -333,11 +333,6 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     }
     if (text.startsWith("/")) return;
 
-    // Group chat: only respond if bot is mentioned or replying to bot
-    if (ctx.chat.type === "group" || ctx.chat.type === "supergroup") {
-      if (!isBotMentioned(ctx)) return;
-    }
-
     if (!env.GROQ_API_KEY && !env.GEMINI_API_KEY) {
       await ctx.reply("AI chat is not configured (set GEMINI_API_KEY or GROQ_API_KEY).");
       return;
@@ -357,9 +352,6 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     }
     const photoMsg = ctx.message;
     if (!photoMsg) return;
-    if (ctx.chat.type === "group" || ctx.chat.type === "supergroup") {
-      if (!isBotMentioned(ctx)) return;
-    }
 
     const photos = photoMsg.photo!;
     const largest = photos[photos.length - 1];
@@ -544,29 +536,6 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
   });
 
   bot.catch((err) => console.error("Bot error:", err.error));
-}
-
-// ---------- Helpers ----------
-
-function isBotMentioned(ctx: MyContext): boolean {
-  const msg = ctx.message!;
-  const me = ctx.me;
-  if (msg.reply_to_message?.from?.id === me.id) return true;
-
-  const checkEntities = (text: string, entities: readonly any[]) => {
-    for (const ent of entities) {
-      if (ent.type === "mention") {
-        const mention = text.slice(ent.offset, ent.offset + ent.length);
-        if (mention === `@${me.username}`) return true;
-      }
-      if (ent.type === "text_mention" && ent.user?.id === me.id) return true;
-    }
-    return false;
-  };
-
-  if (msg.text && msg.entities && checkEntities(msg.text, msg.entities)) return true;
-  if (msg.caption && msg.caption_entities && checkEntities(msg.caption, msg.caption_entities)) return true;
-  return false;
 }
 
 async function handleChat(ctx: MyContext, env: Env, text: string) {
@@ -1053,16 +1022,39 @@ app.all("*", async (c) => {
     if (command === "set") {
       const url = new URL(c.req.url);
       const webhookUrl = `${url.protocol}//${url.host}/`;
-      const resp = await fetch(
-        `https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}/setWebhook`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: webhookUrl }),
-        }
-      );
-      const data: any = await resp.json();
-      return c.json(data);
+      const botToken = c.env.TELEGRAM_BOT_TOKEN;
+      const apiBase = `https://api.telegram.org/bot${botToken}`;
+
+      // Set webhook
+      const webhookResp = await fetch(`${apiBase}/setWebhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: webhookUrl }),
+      });
+      const webhookData: any = await webhookResp.json();
+
+      // Delete old commands, then register current ones
+      const cmdList = [
+        { command: "start", description: "Start the bot" },
+        { command: "help", description: "Show help and available commands" },
+        { command: "write", description: "Write a blog post about a topic" },
+        { command: "model", description: "Switch AI model by name" },
+        { command: "models", description: "Select AI model from a menu" },
+        { command: "new", description: "Start a new conversation" },
+        { command: "redo", description: "Re-send your last message" },
+        { command: "clear", description: "Reset chat history" },
+        { command: "forget", description: "Clear all saved memories" },
+        { command: "system", description: "View bot status" },
+      ];
+      await fetch(`${apiBase}/deleteMyCommands`, { method: "POST" });
+      const cmdResp = await fetch(`${apiBase}/setMyCommands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commands: cmdList }),
+      });
+      const cmdData: any = await cmdResp.json();
+
+      return c.json({ webhook: webhookData, commands: cmdData });
     }
     return c.text("Bot running. Send POST for webhook.");
   }
