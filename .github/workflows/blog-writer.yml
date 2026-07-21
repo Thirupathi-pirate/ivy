@@ -40,23 +40,23 @@ jobs:
       - name: Determine blog topic
         env:
           GH_EVENT: ${{ github.event_name }}
-GH_TOPIC: ${{ inputs.topic }}
-CURRENTS_API_KEY: ${{ secrets.CURRENTS_API_KEY }}
+          GH_TOPIC: ${{ inputs.topic }}
+          CURRENTS_API_KEY: ${{ secrets.CURRENTS_API_KEY }}
         run: |
           if [ "$GH_EVENT" = "workflow_dispatch" ] && [ -n "$GH_TOPIC" ]; then
             echo "TOPIC=$GH_TOPIC" >> $GITHUB_ENV
             echo "TYPE=general" >> $GITHUB_ENV
           else
-HOUR=$(TZ='Asia/Kolkata' date +%H)
-if [ "$HOUR" = "10" ] || [ "$HOUR" = "20" ]; then
-TYPE="tech"
-else
-TYPE="general"
-fi
+            HOUR=$(TZ='Asia/Kolkata' date +%H)
+            if [ "$HOUR" = "10" ] || [ "$HOUR" = "20" ]; then
+              TYPE="tech"
+            else
+              TYPE="general"
+            fi
             TOPIC=$(uv run python scripts/find_trending_topic.py --type $TYPE)
             echo "TOPIC=$TOPIC" >> $GITHUB_ENV
             echo "TYPE=$TYPE" >> $GITHUB_ENV
-fi
+          fi
           echo "Using topic: $TOPIC"
 
       - name: Run blog writing crew
