@@ -1,10 +1,11 @@
 name: Daily Blog Writer
 
 on:
-  schedule:
-    - cron: '20 0 * * *'    # 5:50 AM IST → Tech
-    - cron: '30 4 * * *'    # 10:00 AM IST → General
-    - cron: '0 12 * * *'    # 5:30 PM IST → General
+schedule:
+- cron: '30 23 * * *'    # 5:00 AM IST → General
+- cron: '30 4 * * *'     # 10:00 AM IST → Tech
+- cron: '30 9 * * *'     # 3:00 PM IST → General
+- cron: '30 14 * * *'    # 8:00 PM IST → Tech
   workflow_dispatch:
     inputs:
       topic:
@@ -45,12 +46,12 @@ jobs:
             echo "TOPIC=$GH_TOPIC" >> $GITHUB_ENV
             echo "TYPE=general" >> $GITHUB_ENV
           else
-            HOUR=$(TZ='Asia/Kolkata' date +%H)
-            if [ "$HOUR" = "05" ]; then
-              TYPE="tech"
-            else
-              TYPE="general"
-            fi
+HOUR=$(TZ='Asia/Kolkata' date +%H)
+if [ "$HOUR" = "10" ] || [ "$HOUR" = "20" ]; then
+TYPE="tech"
+else
+TYPE="general"
+fi
             TOPIC=$(uv run python scripts/find_trending_topic.py --type $TYPE)
             echo "TOPIC=$TOPIC" >> $GITHUB_ENV
             echo "TYPE=$TYPE" >> $GITHUB_ENV
