@@ -115,7 +115,7 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 | `GITHUB_PAT` | ✅ Yes | `index.ts` | GitHub Actions dispatch |
 | `GITHUB_REPO` | ✅ Yes | `index.ts` | e.g. `Thirupathi-pirate/ivy` |
 | `UNSPLASH_ACCESS_KEY` | ✅ Yes | `publish_post.py`, workflow | Blog cover images |
-| `NEWS_API_KEY` | ✅ Yes | `find_trending_topic.py` | Trending topics |
+| `CURRENTS_API_KEY` | ✅ Yes | `find_trending_topic.py`, workflow | Trending topics (replaces News API) | #WN
 | `TELEGRAM_CHAT_ID` | ✅ Yes | workflow | Notification recipient |
 | `ADMIN_PASSWORD` | ❌ Optional | `index.ts` | Admin API access |
 | `TMDB_API_KEY` | ❌ Optional | `ai.ts` | Enhanced movie tools |

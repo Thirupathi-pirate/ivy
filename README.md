@@ -99,7 +99,7 @@ Set these in `.env`:
 | `GITHUB_PAT` | Triggers blog publishing workflow |
 | `GITHUB_REPO` | e.g. `Thirupathi-pirate/ivy` |
 | `UNSPLASH_ACCESS_KEY` | Fetches blog cover images |
-| `NEWS_API_KEY` | Trending topic discovery |
+| `CURRENTS_API_KEY` | Trending topic discovery (replaces News API) |
 
 ><sub>Optional: `TMDB_API_KEY`, `REDDIT_CLIENT_ID/SECRET/USER_AGENT` for enhanced movie tools.</sub>
 

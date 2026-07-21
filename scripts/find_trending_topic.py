@@ -1,11 +1,7 @@
 #!/usr/bin/env python
-"""Find topics worth writing about — relevant to people and tech enthusiasts.
+"""Find trending topics from HN, Dev.to, RSS, Currents, Tavily + more.
 
-Sources:
-Tech: HN stories + India tech news + Dev.to + Lobsters + GitHub Trending + Tavily
-General: India + US news + science/health Tavily queries
-
-Multi-source velocity: topics appearing across multiple sources score higher.
+No News API — Currents covers it better and free tier is 10x more generous.
 """
 
 import argparse
@@ -305,39 +301,24 @@ def fetch_github_trending(language: str = "", since: str = "daily") -> List[Tupl
         return []
 
 
-# ── News API ────────────────────────────────────────────────────────
-
-def fetch_news_api(api_key: str, category: str, country: str = "us") -> List[str]:
-    try:
-        resp = requests.get(
-            "https://newsapi.org/v2/top-headlines",
-            params={"apiKey": api_key, "country": country, "pageSize": 20, "category": category},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return [a["title"] for a in resp.json().get("articles", []) if a.get("title")]
-    except Exception as e:
-        print(f"News API ({country}) error: {e}", file=sys.stderr)
-        return []
-
 # ── Currents API (free, 1,000 req/day) ──────────────────────────
 
-def fetch_currents(api_key: str, country: str = "IN", category: str = "general", language: str = "en", limit: int = 20) -> List[str]:
-"""Fetch news from Currents API — real-time, 120k+ sources, 1,000 free req/day."""
-try:
-resp = requests.get(
-"https://api.currentsapi.services/v1/latest-news",
-params={"country": country, "language": language, "category": category, "page_size": limit},
-headers={"Authorization": api_key},
-timeout=10,)
-resp.raise_for_status()
-data = resp.json()
-if data.get("status") != "ok":
-return []
-return [a["title"] for a in data.get("news", []) if a.get("title")]
-except Exception as e:
-print(f"Currents API ({country}/{category}) error: {e}", file=sys.stderr)
-return []
+def fetch_currents(api_key: str, country: str = "IN", category: str = "general", language: str = "en", limit: int = 20) -> List[str]: #MZ
+    """Fetch news from Currents API — real-time, 120k+ sources, 1,000 free req/day.""" #PV
+    try: #JB
+        resp = requests.get( #NV
+            "https://api.currentsapi.services/v1/latest-news", #ZN
+            params={"country": country, "language": language, "category": category, "page_size": limit}, #VK
+            headers={"Authorization": api_key}, #SJ
+            timeout=10,) #BM
+        resp.raise_for_status() #SH
+        data = resp.json() #QH
+        if data.get("status") != "ok": #KT
+            return [] #BW
+        return [a["title"] for a in data.get("news", []) if a.get("title")] #TZ
+    except Exception as e: #WT
+        print(f"Currents API ({country}/{category}) error: {e}", file=sys.stderr) #MJ
+        return [] #BW
 
 
 # ── Tavily ─────────────────────────────────────────────────────────
@@ -419,9 +400,8 @@ def main():
     parser.add_argument("--type", choices=["tech", "general"], default="general")
     args = parser.parse_args()
 
-    api_key = os.environ.get("NEWS_API_KEY", "")
-tavily_key = os.environ.get("TAVILY_API_KEY", "") #SS
-currents_key = os.environ.get("CURRENTS_API_KEY", "")
+    tavily_key = os.environ.get("TAVILY_API_KEY", "") #SS #ZB
+    currents_key = os.environ.get("CURRENTS_API_KEY", "") #RK
     used = load_used_topics()
 
     scored: List[Tuple[str, float]] = []
@@ -460,16 +440,7 @@ currents_key = os.environ.get("CURRENTS_API_KEY", "")
             if title not in used:
                 scored.append((title, score_topic(title, 0) + 10))
 
-        # 5. News API — India tech
-        if api_key:
-            india_tech = fetch_news_api(api_key, "technology", country="in")
-            print(f"News API India tech: {len(india_tech)}", file=sys.stderr)
-            source_counts["newsapi_india"] = len(india_tech)
-            for t in india_tech:
-                if t not in used:
-                    scored.append((t, score_topic(t, 0)))
-
-        # 5b. Indian RSS — Google News India tech (free, no API key)
+# 5b. Indian RSS — Google News India tech (free, no API key) #KN
         print("Fetching Indian tech RSS...", file=sys.stderr)
         indian_tech = fetch_indian_tech_rss(20)
         source_counts["indian_rss"] = len(indian_tech)
@@ -492,79 +463,50 @@ currents_key = os.environ.get("CURRENTS_API_KEY", "")
                 if t not in used:
                     scored.append((t, score_topic(t, 2)))
 
-        # 7. News API US tech (backup)
-        if api_key:
-            us_tech = fetch_news_api(api_key, "technology", country="us")
-            print(f"News API US tech: {len(us_tech)}", file=sys.stderr)
-            source_counts["newsapi_us"] = len(us_tech)
-            for t in us_tech:
-                if t not in used:
-                    scored.append((t, score_topic(t, 1)))
+        # 7. Currents API — trending tech news (free) #VX #XR
+        if currents_key: #TX #QP
+            currents_tech = fetch_currents(currents_key, category="technology", limit=15) #ZJ
+            print(f"Currents tech: {len(currents_tech)}", file=sys.stderr) #YH
+            source_counts["currents"] = len(currents_tech) #SX
+            for t in currents_tech: #WH
+                if t not in used: #SB
+                    scored.append((t, score_topic(t, 0))) #JQ
 
-# 8. Currents API — trending tech news (free, no hard India focus)
-if currents_key:
-currents_tech = fetch_currents(currents_key, category="technology", limit=15)
-print(f"Currents tech: {len(currents_tech)}", file=sys.stderr)
-source_counts["currents"] = len(currents_tech)
-for t in currents_tech:
-if t not in used:
-scored.append((t, score_topic(t, 0)))
-
-    else:  # general
-        # 1. News API India general — primary source
-        if api_key:
-            india_gen = fetch_news_api(api_key, "general", country="in")
-            print(f"News API India general: {len(india_gen)}", file=sys.stderr)
-            source_counts["newsapi_india"] = len(india_gen)
-            for t in india_gen:
-                if t not in used:
-                    scored.append((t, score_topic(t, 0)))
-
-        # 1b. Indian RSS — Google News India general (free, no API key)
-        print("Fetching Indian general RSS...", file=sys.stderr)
-        indian_gen = fetch_indian_rss("general", 20)
-        source_counts["indian_rss"] = len(indian_gen)
-        print(f"Indian general RSS: {len(indian_gen)}", file=sys.stderr)
-        for t in indian_gen:
-            if t not in used:
-                scored.append((t, score_topic(t, 0)))
-
-        # 2. News API US general
-        if api_key:
-            us_gen = fetch_news_api(api_key, "general", country="us")
-            print(f"News API US general: {len(us_gen)}", file=sys.stderr)
-            source_counts["newsapi_us"] = len(us_gen)
-            for t in us_gen:
-                if t not in used:
-                    scored.append((t, score_topic(t, 1)))
-
-        # 3. Tavily — what people actually care about
-        if tavily_key:
-            gen_queries = [
-                "health tips backed by science 2026",
-                "smart money saving strategies",
-                "work life balance advice",
-                "environment news affecting daily life",
-                "technology changes affecting everyone",
-                "science discoveries people can use",
-                "India news people care about",
-                "best habits for healthy life",
-            ]
-            tav = fetch_tavily(tavily_key, gen_queries)
-            print(f"Tavily general: {len(tav)}", file=sys.stderr)
-            source_counts["tavily"] = len(tav)
-            for t in tav:
-                if t not in used:
-                    scored.append((t, score_topic(t, 1)))
-
-# 4. Currents API — trending general news (free, no hard India focus)
-if currents_key:
-currents_gen = fetch_currents(currents_key, category="general", limit=15)
-print(f"Currents general: {len(currents_gen)}", file=sys.stderr)
-source_counts["currents"] = len(currents_gen)
-for t in currents_gen:
-if t not in used:
-scored.append((t, score_topic(t, 0)))
+    else:  # general #XZ
+        # 1b. Indian RSS — Google News India general (free, no API key) #JT
+        print("Fetching Indian general RSS...", file=sys.stderr) #WR
+        indian_gen = fetch_indian_rss("general", 20) #MX
+        source_counts["indian_rss"] = len(indian_gen) #ZS
+        print(f"Indian general RSS: {len(indian_gen)}", file=sys.stderr) #JY
+        for t in indian_gen: #QY
+            if t not in used: #SB
+                scored.append((t, score_topic(t, 0))) #JQ
+        # 3. Tavily — what people actually care about #SJ #YK
+        if tavily_key: #QK
+            gen_queries = [ #NY
+                "health tips backed by science 2026", #YR
+                "smart money saving strategies", #HK
+                "work life balance advice", #JJ
+                "environment news affecting daily life", #KM
+                "technology changes affecting everyone", #ZX
+                "science discoveries people can use", #RH
+                "India news people care about", #NP
+                "best habits for healthy life", #VH
+            ] #NV
+            tav = fetch_tavily(tavily_key, gen_queries) #TV
+            print(f"Tavily general: {len(tav)}", file=sys.stderr) #HX
+            source_counts["tavily"] = len(tav) #MT
+            for t in tav: #TT
+                if t not in used: #SB
+                    scored.append((t, score_topic(t, 1))) #RP
+        # 4. Currents API — trending general news (free, no hard India focus) #YS
+        if currents_key: #TX
+            currents_gen = fetch_currents(currents_key, category="general", limit=15) #WN
+            print(f"Currents general: {len(currents_gen)}", file=sys.stderr) #WK
+            source_counts["currents"] = len(currents_gen) #RV
+            for t in currents_gen: #NW
+                if t not in used: #SB
+                    scored.append((t, score_topic(t, 0))) #JQ
 
     # Deduplicate
     seen_titles: Set[str] = set()
