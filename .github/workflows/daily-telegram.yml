@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       topic:
-        description: 'Blog topic'
+        description: 'Blog topic to write about'
         required: false
         default: ''
 
