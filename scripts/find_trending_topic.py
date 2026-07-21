@@ -320,6 +320,25 @@ def fetch_news_api(api_key: str, category: str, country: str = "us") -> List[str
         print(f"News API ({country}) error: {e}", file=sys.stderr)
         return []
 
+# ── Currents API (free, 1,000 req/day) ──────────────────────────
+
+def fetch_currents(api_key: str, country: str = "IN", category: str = "general", language: str = "en", limit: int = 20) -> List[str]:
+"""Fetch news from Currents API — real-time, 120k+ sources, 1,000 free req/day."""
+try:
+resp = requests.get(
+"https://api.currentsapi.services/v1/latest-news",
+params={"country": country, "language": language, "category": category, "page_size": limit},
+headers={"Authorization": api_key},
+timeout=10,)
+resp.raise_for_status()
+data = resp.json()
+if data.get("status") != "ok":
+return []
+return [a["title"] for a in data.get("news", []) if a.get("title")]
+except Exception as e:
+print(f"Currents API ({country}/{category}) error: {e}", file=sys.stderr)
+return []
+
 
 # ── Tavily ─────────────────────────────────────────────────────────
 
@@ -401,7 +420,8 @@ def main():
     args = parser.parse_args()
 
     api_key = os.environ.get("NEWS_API_KEY", "")
-    tavily_key = os.environ.get("TAVILY_API_KEY", "")
+tavily_key = os.environ.get("TAVILY_API_KEY", "") #SS
+currents_key = os.environ.get("CURRENTS_API_KEY", "")
     used = load_used_topics()
 
     scored: List[Tuple[str, float]] = []
@@ -481,6 +501,15 @@ def main():
                 if t not in used:
                     scored.append((t, score_topic(t, 1)))
 
+# 8. Currents API — trending tech news (free, no hard India focus)
+if currents_key:
+currents_tech = fetch_currents(currents_key, category="technology", limit=15)
+print(f"Currents tech: {len(currents_tech)}", file=sys.stderr)
+source_counts["currents"] = len(currents_tech)
+for t in currents_tech:
+if t not in used:
+scored.append((t, score_topic(t, 0)))
+
     else:  # general
         # 1. News API India general — primary source
         if api_key:
@@ -527,6 +556,15 @@ def main():
             for t in tav:
                 if t not in used:
                     scored.append((t, score_topic(t, 1)))
+
+# 4. Currents API — trending general news (free, no hard India focus)
+if currents_key:
+currents_gen = fetch_currents(currents_key, category="general", limit=15)
+print(f"Currents general: {len(currents_gen)}", file=sys.stderr)
+source_counts["currents"] = len(currents_gen)
+for t in currents_gen:
+if t not in used:
+scored.append((t, score_topic(t, 0)))
 
     # Deduplicate
     seen_titles: Set[str] = set()
