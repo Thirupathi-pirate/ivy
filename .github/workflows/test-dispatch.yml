@@ -1,0 +1,12 @@
+name: Test Dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Test topic'
+        required: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Hello ${{ inputs.topic }}"
