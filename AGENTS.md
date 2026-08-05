@@ -132,18 +132,23 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 
 ## ⚡ Model Chain
 
-### Bot — 3-model Gemini fallback
+### Bot — Gemini primary, Groq fallback (5-model chain)
 ```
 gemini-2.5-flash-lite         (preferred — 30 RPM / 1,500 RPD / 1M TPM)
   → gemini-2.5-flash           (fallback 1)
   → gemini-3.1-flash-lite      (fallback 2)
+  → llama-3.3-70b-versatile    (Groq — fallback 3)
+  → meta-llama/llama-4-scout-17b-16e-instruct  (Groq — fallback 4)
 ```
-**Rate limiting:** Detects 429, 503, Gemini error codes. Parses `x-ratelimit-remaining-requests`, `x-ratelimit-reset-requests`. If all 3 models exhausted → *"I'm rate-limited across all models"*.
+- **Provider routing:** models starting with `gemini-` use `GEMINI_API_KEY` + `callGemini`; all others use `GROQ_API_KEY` + `callGroq` (OpenAI-compatible, tool support via `tool_choice: "auto"`).
+- **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`).
+- **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
+**Rate limiting:** Detects 429, 503, Gemini error codes. If all 5 models exhausted → *"I'm rate-limited across all models"*.
 
-### Blog Writer (CrewAI)
+### Blog Writer (CrewAI) — Gemini only
 ```
-Model: google/gemma-4-31b-it
-Max tokens: 32768
+Model: gemini/gemma-4-31b-it   (Gemini provider — crew never uses Groq)
+Max tokens: 16384
 Timeout: 300s
 Retry: 3 attempts (exponential backoff: 30s, 60s, 120s on 5xx/timeout/connection errors)
 ```

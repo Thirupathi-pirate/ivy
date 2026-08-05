@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter, webhookCallback } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS } from "./ai";
 
 // In-memory dedup for webhook update IDs (replaces KV to save quota)
 const recentUpdates = new Map<number, number>();
@@ -62,11 +62,14 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
   return prompt;
 }
 
-const MODELS = [
-  "gemini-2.5-flash-lite",
-  "gemini-2.5-flash",
-  "gemini-3.1-flash-lite",
-];
+const MODEL_LABELS: Record<string, string> = {
+  "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+  "gemini-2.5-flash": "Gemini 2.5 Flash",
+  "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+  "llama-3.3-70b-versatile": "Llama 3.3 70B (Groq)",
+  "meta-llama/llama-4-scout-17b-16e-instruct": "Llama 4 Scout (Groq)",
+};
+const modelLabel = (m: string): string => MODEL_LABELS[m] || m;
 
 const FALLBACK_CHAIN_DISPLAY = MODELS.map((m) => `\`${m}\``).join(" → ");
 
@@ -252,9 +255,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.command("models", async (ctx) => {
     const keyboard = new InlineKeyboard();
     for (const m of MODELS) {
-      const label = m.replace("meta-llama/", "").replace("llama-", "");
       const isActive = m === ctx.session.model;
-      keyboard.text(`${isActive ? "✅ " : ""}${label}`, `model:${m}`).row();
+      keyboard.text(`${isActive ? "✅ " : ""}${modelLabel(m)}`, `model:${m}`).row();
     }
     await ctx.reply("Select a model:", { reply_markup: keyboard });
   });
@@ -284,9 +286,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         await ctx.answerCallbackQuery({ text: `Switched to ${model}` });
         const keyboard = new InlineKeyboard();
         for (const m of MODELS) {
-          const label = m.replace("meta-llama/", "").replace("llama-", "");
           const isActive = m === ctx.session.model;
-          keyboard.text(`${isActive ? "✅ " : ""}${label}`, `model:${m}`).row();
+          keyboard.text(`${isActive ? "✅ " : ""}${modelLabel(m)}`, `model:${m}`).row();
         }
         await ctx.editMessageText("Select a model:", { reply_markup: keyboard });
       } else {
@@ -417,7 +418,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       }
 
       if (result.text) {
-        history.push({ role: "assistant", content: sanitizeTelegramMarkdown(result.text) });
+        // Store raw text (not sanitized) so escapes don't compound in history
+        history.push({ role: "assistant", content: result.text });
       }
 
       if (history.length > MAX_HISTORY) {
@@ -623,7 +625,9 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         await ctx.reply(parts[i]);
       }
     }
-    history.push({ role: "assistant", content: text });
+    // Store the RAW model text in history — sanitized text (escaped \_ \`) would
+    // compound escape sequences across turns and pollute what the model sees.
+    history.push({ role: "assistant", content: result.text });
   }
 
   // Trim: keep existing system prompt + last N messages
@@ -741,6 +745,8 @@ const DISCORD_COMMANDS = [
         { name: "Gemini 2.5 Flash Lite", value: "gemini-2.5-flash-lite" },
         { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash" },
         { name: "Gemini 3.1 Flash Lite", value: "gemini-3.1-flash-lite" },
+        { name: "Llama 3.3 70B (Groq)", value: "llama-3.3-70b-versatile" },
+        { name: "Llama 4 Scout (Groq)", value: "meta-llama/llama-4-scout-17b-16e-instruct" },
       ],
     }],
   },

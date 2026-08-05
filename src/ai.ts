@@ -1,10 +1,16 @@
 const GROQ_API = "https://api.groq.com/openai/v1";
 
-const FALLBACK_CHAIN = [
+export const MODELS = [
+  // Gemini (primary chat provider)
   "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-3.1-flash-lite",
+  // Groq (chat fallback + user-selectable)
+  "llama-3.3-70b-versatile",
+  "meta-llama/llama-4-scout-17b-16e-instruct",
 ];
+
+const FALLBACK_CHAIN = [...MODELS];
 
 const GEMINI_MODEL_MAP: Record<string, string> = {
   "gemini-2.5-flash": "gemini-2.5-flash",
@@ -681,7 +687,14 @@ function getTools(env: Env) {
 // ===================== Function Call Dispatcher =====================
 
 async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCall): Promise<string> {
-  const args = JSON.parse(toolCall.function.arguments);
+  // Never let malformed/empty tool arguments crash the whole reply.
+  let args: any = {};
+  try {
+    args = JSON.parse(toolCall.function.arguments || "{}");
+  } catch {
+    args = {};
+  }
+  if (typeof args !== "object" || args === null) args = {};
   switch (toolCall.function.name) {
     case "create_reminder": {
       const result = await createReminder(env.IVY_DB, chatId, args.time, args.message);
@@ -794,8 +807,9 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
 // ===================== Groq API Call =====================
 
 const MODEL_MAX_TOKENS: Record<string, number> = {
+  // Groq caps output at 8192 tokens — keep all Groq models at the limit
   "meta-llama/llama-4-scout-17b-16e-instruct": 8192,
-  "llama-3.3-70b-versatile": 32768,
+  "llama-3.3-70b-versatile": 8192,
   "llama-3.1-8b-instant": 8192,
 };
 
@@ -815,12 +829,25 @@ async function callGroq(
     body.tools = tools;
     body.tool_choice = "auto";
   }
-  const resp = await fetch(`${GROQ_API}/chat/completions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (resp.status === 429 || resp.status === 413) return { _rateLimited: true, model };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${GROQ_API}/chat/completions`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e: any) {
+    clearTimeout(timeout);
+    // Timeout or network failure → try the next model in the chain
+    console.warn(`[${model}] Groq request failed: ${e?.message || e.name}`);
+    return { _rateLimited: true, model };
+  }
+  clearTimeout(timeout);
+  // Rate limits (429/413) AND server errors (5xx) → fall back to the next model
+  if (resp.status === 429 || resp.status === 413 || resp.status >= 500) return { _rateLimited: true, model };
   if (!resp.ok) {
     const err = await resp.text();
     if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) return { _retry: true };
@@ -857,23 +884,41 @@ function messagesToGeminiContents(messages: ChatMessage[]): {
   let systemInstruction: any;
   const contents: any[] = [];
   const callMap = new Map<string, string>();
+  const replayedIds = new Set<string>();
 
   for (const msg of messages) {
     if (msg.role === "system") {
       systemInstruction = { parts: [{ text: msg.content || "" }] };
       continue;
     }
-    if (msg.role === "assistant" && (msg as any).tool_calls) {
-      for (const tc of (msg as any).tool_calls) {
-        callMap.set(tc.id, tc.function.name);
-      }
-    }
     if (msg.role === "tool") {
       const fnName = msg.name || callMap.get(msg.tool_call_id || "") || msg.tool_call_id || "unknown";
-      contents.push({
-        role: "user",
-        parts: [{ functionResponse: { name: fnName, response: { result: msg.content } } }],
-      });
+      // Echo the functionCall id on the response so Gemini 3 models can map it back.
+      const fr: any = { name: fnName, response: { result: msg.content } };
+      if (msg.tool_call_id && replayedIds.has(msg.tool_call_id)) fr.id = msg.tool_call_id;
+      contents.push({ role: "user", parts: [{ functionResponse: fr }] });
+      continue;
+    }
+    if (msg.role === "assistant" && (msg as any).tool_calls?.length) {
+      // Gemini REQUIRES the model's tool-call turn to be replayed as functionCall parts.
+      // Replaying it as plain text (or empty) breaks the functionCall→functionResponse
+      // pairing and corrupts the conversation on the next turn.
+      const parts: any[] = [];
+      if (msg.content) parts.push({ text: msg.content });
+      for (const tc of (msg as any).tool_calls) {
+        callMap.set(tc.id, tc.function.name);
+        replayedIds.add(tc.id);
+        let args: any = {};
+        try {
+          args = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+        } catch {
+          args = {};
+        }
+        const fc: any = { name: tc.function.name, args };
+        if (tc.id) fc.id = tc.id;
+        parts.push({ functionCall: fc });
+      }
+      contents.push({ role: "model", parts });
       continue;
     }
     const role = msg.role === "assistant" ? "model" : "user";
@@ -934,12 +979,14 @@ async function callGemini(
     });
   } catch (e: any) {
     clearTimeout(timeout);
-    if (e.name === "AbortError") return { _rateLimited: true, model };
-    throw e;
+    // Timeout or network failure → try the next model in the chain
+    console.warn(`[${model}] Gemini request failed: ${e?.message || e.name}`);
+    return { _rateLimited: true, model };
   }
   clearTimeout(timeout);
 
-  if (resp.status === 429 || resp.status === 503) return { _rateLimited: true, model };
+  // Rate limits (429/503) AND server errors (5xx) → fall back to the next model
+  if (resp.status === 429 || resp.status === 503 || resp.status >= 500) return { _rateLimited: true, model };
   if (!resp.ok) {
     const err = await resp.text();
     if (resp.status === 400 && err.includes("not supported")) {
@@ -974,7 +1021,9 @@ async function callGemini(
     if (part.text) text += part.text;
     if (part.functionCall) {
       toolCalls.push({
-        id: `call_gemini_${Date.now()}_${toolCalls.length}`,
+        // Gemini 3 models return a unique id per functionCall that must be
+        // echoed back in the functionResponse — preserve it when present.
+        id: part.functionCall.id || `call_gemini_${Date.now()}_${toolCalls.length}`,
         type: "function",
         function: {
           name: part.functionCall.name,
@@ -1068,10 +1117,14 @@ function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | nul
 const TOOL_KEYWORDS = ["remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in"];
 
 function needsTools(messages: ChatMessage[]): boolean {
-  for (const m of messages) {
+  // Only inspect the latest user message. Scanning the whole history means one
+  // old message mentioning "movie"/"remind"/etc. would attach tools to every
+  // unrelated follow-up (extra tokens + tool-loop exposure on plain chat).
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
     if (m.role === "user" && typeof m.content === "string") {
       const text = m.content.toLowerCase();
-      if (TOOL_KEYWORDS.some(kw => text.includes(kw))) return true;
+      return TOOL_KEYWORDS.some((kw) => text.includes(kw));
     }
   }
   return false;
@@ -1088,6 +1141,11 @@ async function processAiInternal(
   const tools = needsTools(messages) ? getTools(env) : [];
 
   const isGemini = (m: string) => m.startsWith("gemini-");
+  // Gemini models + Llama 4 Scout accept images; Llama 3.3/3.1 on Groq are text-only.
+  const isVisionModel = (m: string) => isGemini(m) || m === "meta-llama/llama-4-scout-17b-16e-instruct";
+  const hasImages = messages.some(
+    (m) => Array.isArray(m.content) && m.content.some((p: any) => p?.type === "image_url")
+  );
 
   const chain = preferredModel && FALLBACK_CHAIN.includes(preferredModel)
     ? [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)]
@@ -1095,6 +1153,10 @@ async function processAiInternal(
 
   for (let attempt = 0; attempt < chain.length; attempt++) {
     const model = chain[attempt];
+    if (hasImages && !isVisionModel(model)) {
+      console.warn(`[${model}] skipping (text-only model, images in conversation)`);
+      continue;
+    }
     const currentMessages: ChatMessage[] = JSON.parse(JSON.stringify(messages));
     let useTools = tools.length > 0;
 
@@ -1145,7 +1207,7 @@ async function processAiInternal(
     }
   }
 
-  return { text: "I'm rate-limited across all models right now. Please try again in a minute 💜", modelUsed: "none" };
+  return { text: "I'm hitting rate limits or errors across all models right now. Please try again in a minute 💜", modelUsed: "none" };
 }
 
 // ===================== Public API =====================
