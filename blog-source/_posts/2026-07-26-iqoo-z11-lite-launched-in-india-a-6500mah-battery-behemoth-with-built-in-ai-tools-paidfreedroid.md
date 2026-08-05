@@ -5,7 +5,7 @@ date: 2026-07-26 11:06:29 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  Let's be real: for most of us, our smartphones have evolved from simple communication devices into our primary workstations. For students and young pr
 image:
   path: "https://images.unsplash.com/photo-1753192698854-fb7f66d929fe?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxpUU9PJTIwWjExJTIwTGl0ZXxlbnwwfDB8fHwxNzg1MDYzOTg5fDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "A light green phone with a paper next to it."
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@zelebb"
   unsplash_url: "https://unsplash.com/photos/a-light-green-phone-with-a-paper-next-to-it-HZYcBANvpbs"
 ---
-
-```yaml
-title: "iQOO Z11 Lite 5G Review: The Ultimate Student Powerhouse"
-tags: [iqoo-z11-lite, budget-smartphone, battery-life, student-tech, ai-phones, android-16, india-tech, smartphone-review]
-```
 
 # 🔋 Finally, a Budget Phone That Actually Lasts: The iQOO Z11 Lite 5G
 

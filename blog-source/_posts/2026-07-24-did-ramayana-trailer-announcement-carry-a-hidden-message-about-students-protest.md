@@ -5,7 +5,7 @@ date: 2026-07-24 07:16:53 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  The announcement of a high-budget, modern cinematic adaptation of the *Ramayana* is never merely a piece of entertainment news in the Indian subcontin
 image:
   path: "https://images.unsplash.com/photo-1722440044211-e5ec891a2822?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxEaWQlMjBSYW1heWFuYSUyMHRyYWlsZXJ8ZW58MHwwfHx8MTc4NDg3NzQxM3ww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "A woman in a yellow and red sari talking on a cell phone"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@anildesign"
   unsplash_url: "https://unsplash.com/photos/a-woman-in-a-yellow-and-red-sari-talking-on-a-cell-phone-bYrhc0tj2zQ"
 ---
-
-```yaml
-title: "Decoding the Ramayana: Cinema, Culture, and the Art of Speculation"
-tags: [indian-cinema, ramayana, film-semiotics, cultural-analysis, digital-folklore, movie-marketing, socio-politics]
-```
 
 # 🎬 The Cinematic Ramayana: Mythology, Politics, and the Art of Speculation
 

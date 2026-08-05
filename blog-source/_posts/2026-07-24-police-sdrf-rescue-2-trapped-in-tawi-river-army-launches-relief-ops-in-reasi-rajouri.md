@@ -5,13 +5,8 @@ date: 2026-07-24 01:03:06 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  Monsoon season in Jammu and Kashmir is a study in contradictions. To the casual observer, the rain transforms the Shivalik hills into a lush, emerald 
 ---
-
-```yaml
-title: "Braving the Current: J&K's Monsoon Rescue Operations"
-tags: [jammu-kashmir, disaster-management, indian-army, sdrf, monsoon-relief, tawi-river, rescue-operations, climate-resilience]
-```
 
 # 🌊 The Monsoon’s Fury and the Fight to Save Lives
 

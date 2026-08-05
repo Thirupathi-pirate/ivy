@@ -134,11 +134,11 @@
     {% if forloop.first %}
       {% assign _code_content = _snippet %}
     {% else %}
-      {% assign _left = _snippet | split: '</code></div>' | first %}
+      {% assign _code_parts = _snippet | split: '</code></div>' %}
+      {% assign _left = _code_parts | first %}
+      {% assign _right = _code_parts | slice: 1, 99 | join: '</code></div>' %}
 
-      {% if _left contains '&lt;' and _left contains 'nf' %}
-        {% assign _lang = _left | split: 'nf' | last | split: '&lt;' | first | strip %}
-      {% endif %}
+      {% assign _lang = _left | split: 'class="language-' | last | split: '"' | first | strip %}
 
       {% if _lang == nil or _lang == empty %}
         {% assign _lang = 'code' %}
@@ -163,6 +163,7 @@
       {% assign _code_content = _code_content | append: '<div class="highlight"><code>' %}
       {% assign _code_content = _code_content | append: _left %}
       {% assign _code_content = _code_content | append: '</code></div>' %}
+      {% assign _code_content = _code_content | append: _right %}
     {% endif %}
   {% endfor %}
 

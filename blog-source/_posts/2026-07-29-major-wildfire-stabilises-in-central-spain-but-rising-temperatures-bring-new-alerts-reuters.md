@@ -5,7 +5,7 @@ date: 2026-07-29 16:12:10 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  If you’ve been following the news from Guadalajara, you know the air there has been thick with smoke and the kind of August heat that just doesn’t let
 image:
   path: "https://images.unsplash.com/photo-1615092296061-e2ccfeb2f3d6?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxNYWpvciUyMHdpbGRmaXJlJTIwc3RhYmlsaXNlc3xlbnwwfDB8fHwxNzg1MzQxNTMwfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "wildfire burning across hillside at dusk"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@mattpalmer"
   unsplash_url: "https://unsplash.com/photos/wildfire-burning-across-hillside-at-dusk-kbTp7dBzHyY"
 ---
-
-```yaml
-title: Why "Stabilized" Fires in Guadalajara are Still a Threat
-tags: [wildfires, spain, guadalajara, climate-change, mega-fires, ecology, forestry, disaster-management]
-```
 
 # Why "Stabilized" Fires in Guadalajara are Still a Big Deal: Heat, Wind, and Mega-Fires in Central Spain
 

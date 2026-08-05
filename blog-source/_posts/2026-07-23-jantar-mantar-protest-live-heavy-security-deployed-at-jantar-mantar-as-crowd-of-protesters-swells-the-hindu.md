@@ -5,7 +5,7 @@ date: 2026-07-23 01:10:23 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  <img src="https://images.unsplash.com/photo-1621091465602-0b72adb9c6ba?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxKYW50YXIlMjBNYW50YXIlMjBwcm90ZXN0fGVufDB8MH
 image:
   path: "https://images.unsplash.com/photo-1620872912495-804f8968ce35?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxKYW50YXIlMjBNYW50YXIlMjBwcm90ZXN0fGVufDB8MHx8fDE3ODQ3NjkwMjN8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "man in black suit holding a man in white hat"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@tsawwunna24"
   unsplash_url: "https://unsplash.com/photos/man-in-black-suit-holding-a-man-in-white-hat--5WBnjI5Z64"
 ---
-
-```yaml
-title: "The Battle for Jantar Mantar: Protest vs. Power"
-tags: [jantar-mantar, delhi-protests, civil-liberties, urban-surveillance, indian-democracy, human-rights, public-order]
-```
 
 <div class="post-hero">
   <img src="https://images.unsplash.com/photo-1621091465602-0b72adb9c6ba?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxKYW50YXIlMjBNYW50YXIlMjBwcm90ZXN0fGVufDB8MHx8fDE3ODQ3NjkwMjN8MA&ixlib=rb-4.1.0&fm=webp&w=780&h=440&fit=crop" alt="people walking on street during daytime" loading="lazy" width="780" height="440" data-unsplash-dl="https://api.unsplash.com/photos/uqpqiPX65C0/download?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxKYW50YXIlMjBNYW50YXIlMjBwcm90ZXN0fGVufDB8MHx8fDE3ODQ3NjkwMjN8MA" />

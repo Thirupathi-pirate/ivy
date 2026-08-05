@@ -6,7 +6,7 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  For decades, the United States has served as the ultimate destination for the world's most ambitious minds. From the research laboratories of MIT and 
 image:
   path: "https://images.unsplash.com/photo-1712000155290-ee65c0a82eda?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxXYW50JTIwdG8lMjB3b3JrfGVufDB8MHx8fDE3ODU0ODMxMzB8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a cup of coffee next to a notepad with the words to do on it"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@michaela_st"
   unsplash_url: "https://unsplash.com/photos/a-cup-of-coffee-next-to-a-notepad-with-the-words-to-do-on-it-lIdLyU_J6u4"
 ---
-
-```yaml
-title: "Pay to Stay: The $100,000 OPT Fee & Global Talent"
-tags: [us-immigration, opt-visa, stem-education, trump-policy, global-talent, higher-education, brain-drain]
-```
 
 # Pay to Stay: What Trump’s Proposed $100,000 OPT Fee Means for Global Talent
 

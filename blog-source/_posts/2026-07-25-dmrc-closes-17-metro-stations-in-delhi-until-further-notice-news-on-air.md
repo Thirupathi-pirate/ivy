@@ -5,13 +5,8 @@ date: 2026-07-25 15:47:10 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  If you live in Delhi, you know the city never really sleeps, but it does breathe—and that breath is the **Delhi Metro Rail Corporation (DMRC)**. For m
 ---
-
-```yaml
-title: "When the City Stops: DMRC's 17-Station Shutdown Explained"
-tags: [delhi-metro, urban-mobility, dmrc, public-transport, city-security, delhi-traffic, transit-resilience]
-```
 
 # 🚇 When the Heartbeat of Delhi Skips a Beat
 

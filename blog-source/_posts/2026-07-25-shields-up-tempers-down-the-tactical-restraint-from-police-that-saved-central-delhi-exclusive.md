@@ -5,7 +5,7 @@ date: 2026-07-25 01:20:24 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  If you’ve ever spent time in the heart of India’s capital, you know it is essentially the country's political pressure cooker. From the manicured lawn
 image:
   path: "https://images.unsplash.com/photo-1605285302906-d1992be949f0?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxTaGllbGRzJTIwVXAlMkMlMjBUZW1wZXJzfGVufDB8MHx8fDE3ODQ5NDI0MjN8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "white and blue box on brown wooden table"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@mooncup"
   unsplash_url: "https://unsplash.com/photos/white-and-blue-box-on-brown-wooden-table-tUgNTJ15WnA"
 ---
-
-```yaml
-title: "Tactical Restraint: How Delhi Police Secured the G20"
-tags: [delhi-police, g20-summit, crowd-control, urban-security, tactical-restraint, public-safety, india-security]
-```
 
 # Shields Up, Tempers Down: How Delhi Police Kept the Peace During G20
 

@@ -36,9 +36,55 @@ def extract_title(content: str) -> str:
 def extract_first_paragraph(content: str) -> str:
     for line in content.splitlines():
         stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
+        if (
+            stripped
+            and not stripped.startswith("#")
+            and not stripped.startswith("```")
+            and not stripped.startswith(">")
+        ):
             return stripped[:150]
     return ""
+
+
+def strip_stray_blocks(content: str) -> str:
+    """Remove LLM reasoning leaks (```thought) and duplicate YAML frontmatter
+    (```yaml) that leak into the article body.
+
+    - ```yaml blocks at the top are stray duplicate frontmatter: remove the
+      closed fence block surgically (preserves post-hero images below it).
+    - ```thought blocks are reasoning leaks: the real article begins at the
+      LAST '# ' H1 line (drops reasoning and any earlier duplicate copies).
+    - Other top-level fences (e.g. ```mermaid) are legit — left untouched.
+    """
+    lines = content.splitlines()
+    start = 0
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+    if start >= len(lines) or not lines[start].strip().startswith("```"):
+        return content
+
+    lang = lines[start].strip()[3:].strip()
+    h1_idxs = [i for i, l in enumerate(lines) if l.startswith("# ")]
+
+    if lang == "thought":
+        if h1_idxs:
+            return "\n".join(lines[h1_idxs[-1]:])
+        # No H1 anywhere — drop the whole leading thought block
+        j = start + 1
+        while j < len(lines) and lines[j].strip() != "```":
+            j += 1
+        return "\n".join(lines[min(j + 1, len(lines)):])
+
+    if lang == "yaml":
+        j = start + 1
+        while j < len(lines) and lines[j].strip() != "```":
+            j += 1
+        j += 1  # past closing fence
+        while j < len(lines) and not lines[j].strip():
+            j += 1
+        return "\n".join(lines[j:])
+
+    return content
 
 
 def has_mermaid(content: str) -> bool:
@@ -156,6 +202,7 @@ def main():
         sys.exit(1)
 
     content = BLOG_POST.read_text(encoding="utf-8")
+    content = strip_stray_blocks(content)
     title = extract_title(content)
     desc = extract_first_paragraph(content)
     slug = slugify(topic)

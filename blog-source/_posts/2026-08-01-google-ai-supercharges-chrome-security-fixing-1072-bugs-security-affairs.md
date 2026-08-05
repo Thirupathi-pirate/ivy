@@ -5,7 +5,7 @@ date: 2026-08-01 07:16:41 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For decades, the battle for browser security has been a relentless game of "Whac-A-Mole." A security researcher discovers a vulnerability, Google rush
 image:
   path: "https://images.unsplash.com/photo-1674027444485-cec3da58eef4?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxHb29nbGUlMjBBSSUyMFN1cGVyY2hhcmdlc3xlbnwwfDB8fHwxNzg1NTY4NjAxfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "an abstract image of a sphere with dots and lines"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@growtika"
   unsplash_url: "https://unsplash.com/photos/an-abstract-image-of-a-sphere-with-dots-and-lines-nGoCBxiaRO0"
 ---
-
-```yaml
-title: "Google's AI Nukes 1,000+ Chrome Bugs: The New Security Era"
-tags: [google-chrome, artificial-intelligence, cybersecurity, memory-safety, rust-lang, llm, software-engineering, vulnerability-management]
-```
 
 # 🛡️ Google Just Used AI to Nuke 1,072 Chrome Bugs—Here’s Why That’s a Big Deal
 

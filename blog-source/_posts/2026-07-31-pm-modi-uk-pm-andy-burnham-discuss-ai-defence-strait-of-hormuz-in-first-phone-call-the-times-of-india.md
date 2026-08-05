@@ -6,13 +6,8 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  In the high-stakes arena of global diplomacy, certain conversations serve as more than mere formalities—they act as architectural blueprints for futur
 ---
-
-```yaml
-title: "India-UK Strategic Axis: AI, Defence, and Maritime Security"
-tags: [geopolitics, india-uk-relations, sovereign-ai, defence-industry, maritime-security, indo-pacific, foreign-policy, technology-diplomacy]
-```
 
 # 🌐 The New Strategic Axis: How Modi and Starmer are Redefining AI, Defence, and Maritime Security
 

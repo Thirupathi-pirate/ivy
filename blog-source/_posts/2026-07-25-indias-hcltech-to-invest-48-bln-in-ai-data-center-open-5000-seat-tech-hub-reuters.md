@@ -6,13 +6,8 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  For three decades, the narrative of the Indian Information Technology (IT) sector was defined by a single, powerful concept: **labor arbitrage**. The 
 ---
-
-```yaml
-title: "HCLTech’s $1.48B Bet: Engineering India’s Sovereign AI"
-tags: [hcltech, artificial-intelligence, sovereign-ai, india-tech, ai-infrastructure, data-centers, digital-transformation, genai]
-```
 
 # 🚀 The $1.48 Billion Bet: How HCLTech is Engineering India's AI Future
 

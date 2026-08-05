@@ -5,7 +5,7 @@ date: 2026-07-31 11:48:11 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  Delhi's judicial corridors have witnessed countless high-profile trials, but the case of Tahir Hussain stands as a chilling testament to the intersect
 image:
   path: "https://images.unsplash.com/photo-1775003338477-136e25a4193c?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxTYXZhZ2VyeSUzQSUyMEV4LUFBUCUyMExlYWRlcnxlbnwwfDB8fHwxNzg1NDk4NDkwfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "Blurry sign with the word sausage"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@kris_ricepees"
   unsplash_url: "https://unsplash.com/photos/blurry-sign-with-the-word-sausage-QYscNZxeV6k"
 ---
-
-```yaml
-title: "The Price of Incitement: Tahir Hussain’s Life Sentence"
-tags: [delhi-riots, tahir-hussain, indian-justice-system, political-accountability, human-rights, north-east-delhi, legal-analysis]
-```
 
 # The Price of Incitement: Tahir Hussain’s Life Sentence and the Scars of 2020
 

@@ -6,13 +6,8 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  In the high-stakes arena of international cricket, the pitch is typically reserved for those who have reached a certain threshold of physical maturity
 ---
-
-```yaml
-title: "The 12-Year-Old Prodigy: Vaibhav Sooryavanshi’s Rise"
-tags: [cricket, india-u19, vaibhav-sooryavanshi, youth-sports, bihar-cricket, world-record, bcci, sports-prodigies]
-```
 
 # 🏏 The 12-Year-Old Who Shook Up Indian Cricket: Vaibhav Sooryavanshi’s Historic Run
 

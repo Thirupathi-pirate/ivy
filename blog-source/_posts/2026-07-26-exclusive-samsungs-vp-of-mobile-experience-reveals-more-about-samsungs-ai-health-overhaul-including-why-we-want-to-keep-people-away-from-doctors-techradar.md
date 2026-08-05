@@ -5,7 +5,7 @@ date: 2026-07-26 07:20:04 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For decades, the fundamental architecture of modern healthcare has been reactive. The logic is simple, if flawed: something hurts, you notice a sympto
 image:
   path: "https://images.unsplash.com/photo-1662947995689-ec5165848ad0?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxFeGNsdXNpdmUlM0ElMjBTYW1zdW5nJTI3cyUyMFZQfGVufDB8MHx8fDE3ODUwNTA0MDR8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a blue cube with a white logo"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@boliviainteligente"
   unsplash_url: "https://unsplash.com/photos/a-blue-cube-with-a-white-logo-7nLzbeVfjA4"
 ---
-
-```yaml
-title: "Samsung’s AI Health Bet: The End of the Waiting Room?"
-tags: [samsung-health, galaxy-ring, artificial-intelligence, wearables, preventative-medicine, health-tech, digital-health, bio-metrics]
-```
 
 # Can a Ring Actually Keep You Out of the Doctor's Office? Samsung’s Big AI Bet
 

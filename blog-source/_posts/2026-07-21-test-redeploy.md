@@ -6,7 +6,7 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  <img src="https://images.unsplash.com/photo-1740818575745-2fdd9682bbba?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHx0ZXN0JTIwcmVkZXBsb3l8ZW58MHwwfHx8MTc4NDYwMz
 image:
   path: "https://images.unsplash.com/photo-1518349619113-03114f06ac3a?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHx0ZXN0JTIwcmVkZXBsb3l8ZW58MHwwfHx8MTc4NDYwMzI2MXww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "person holding pink sticky note"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@dtravisphd"
   unsplash_url: "https://unsplash.com/photos/person-holding-pink-sticky-note-WC6MJ0kRzGw"
 ---
-
-```yaml
-title: "The Secret to Faster Testing: Ephemeral Environments"
-tags: [devops, ci-cd, ephemeral-environments, software-testing, infrastructure-as-code, cloud-computing, kubernetes, developer-experience]
-```
 
 <div class="post-hero">
   <img src="https://images.unsplash.com/photo-1740818575745-2fdd9682bbba?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHx0ZXN0JTIwcmVkZXBsb3l8ZW58MHwwfHx8MTc4NDYwMzI2MXww&ixlib=rb-4.1.0&fm=webp&w=780&h=440&fit=crop" alt="A wooden block spelling the word result on a table" loading="lazy" width="780" height="440" data-unsplash-dl="https://api.unsplash.com/photos/k64ejFiMbJw/download?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHx0ZXN0JTIwcmVkZXBsb3l8ZW58MHwwfHx8MTc4NDYwMzI2MXww" />

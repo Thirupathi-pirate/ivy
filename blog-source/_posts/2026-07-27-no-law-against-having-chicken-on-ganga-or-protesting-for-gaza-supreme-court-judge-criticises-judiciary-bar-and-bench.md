@@ -5,7 +5,7 @@ date: 2026-07-27 01:19:33 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  You know how sometimes the legal system seems to care more about the "spirit" of the law—or what people *feel* is right—than what the law actually say
 image:
   path: "https://images.unsplash.com/photo-1598338430862-3e3098daa722?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxObyUyMGxhdyUyMGFnYWluc3R8ZW58MHwwfHx8MTc4NTExNTE3Mnww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "grayscale photo of woman holding i love you to the moon and back"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@kakalea"
   unsplash_url: "https://unsplash.com/photos/grayscale-photo-of-woman-holding-i-love-you-to-the-moon-and-back--R3pWoWJmTY"
 ---
-
-```yaml
-title: "Justice Gavai on Moral Policing: Law vs. Sentiment"
-tags: [indian-judiciary, supreme-court, fundamental-rights, moral-policing, constitution-of-india, human-rights, legal-philosophy]
-```
 
 # ⚖️ Justice Gavai on Why Judges Shouldn't Play Moral Police
 

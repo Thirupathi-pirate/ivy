@@ -5,7 +5,7 @@ date: 2026-07-28 11:44:10 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For millions of students in India, a single three-hour exam isn't just a test of knowledge—it is a high-stakes lottery ticket for their entire future.
 image:
   path: "https://images.unsplash.com/photo-1466186750748-0225242bf8f6?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxMZWFrZWQlMkMlMjBidXQlMjBhdHxlbnwwfDB8fHwxNzg1MjM5MDQ5fDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "rain drops on a window with a blurry background"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@__matthoffman__"
   unsplash_url: "https://unsplash.com/photos/rain-drops-on-a-window-with-a-blurry-background-KtXP57MBDfU"
 ---
-
-```yaml
-title: "The Leak Pipeline: Mapping India's Exam Security Failures"
-tags: [exam-leaks, india-education, nta, cyber-security, educational-reform, neet-ug, public-policy]
-```
 
 # 🚨 The Trust Gap: What’s Really Going On?
 

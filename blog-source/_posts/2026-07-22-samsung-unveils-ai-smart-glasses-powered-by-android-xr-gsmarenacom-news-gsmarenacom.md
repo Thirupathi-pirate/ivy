@@ -6,7 +6,7 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  The trajectory of personal computing has always been defined by the "barrier" between the user and the data. For decades, that barrier was a bulky des
 image:
   path: "https://images.unsplash.com/photo-1662947995689-ec5165848ad0?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxTYW1zdW5nJTIwdW52ZWlscyUyMEFJfGVufDB8MHx8fDE3ODQ3MzYxMzJ8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a blue cube with a white logo"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@boliviainteligente"
   unsplash_url: "https://unsplash.com/photos/a-blue-cube-with-a-white-logo-7nLzbeVfjA4"
 ---
-
-```yaml
-title: "Samsung & Android XR: Challenging the Spatial Computing Throne"
-tags: [android-xr, samsung, spatial-computing, augmented-reality, google-gemini, wearables, qualcomm, ai-glasses]
-```
 
 # 👓 The Glass Revolution: How Samsung and Android XR Are Challenging the Spatial Computing Throne
 

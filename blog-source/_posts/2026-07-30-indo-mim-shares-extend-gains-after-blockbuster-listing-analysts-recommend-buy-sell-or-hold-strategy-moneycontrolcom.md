@@ -5,13 +5,8 @@ date: 2026-07-30 07:20:10 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  You know how the Indian stock market loves a "blockbuster" IPO? We see it all the time—a stock rockets up on day one, fueled by retail euphoria and a 
 ---
-
-```yaml
-title: "Indo-MIM IPO: Precision Engineering or Overpriced Hype?"
-tags: [indo-mim, ipo-analysis, metal-injection-molding, indian-stock-market, precision-engineering, manufacturing-stocks, investing-india, china-plus-one]
-```
 
 # Indo-MIM: A Blockbuster Debut and the Big Question Over Its Price Tag
 

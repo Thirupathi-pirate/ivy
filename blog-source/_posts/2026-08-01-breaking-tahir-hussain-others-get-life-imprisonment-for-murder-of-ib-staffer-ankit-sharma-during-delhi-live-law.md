@@ -5,13 +5,8 @@ date: 2026-08-01 01:11:23 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  Justice in the Indian judicial system is often characterized by its endurance—a slow, grinding process that tests the patience and resilience of the g
 ---
-
-```yaml
-title: "Justice for Ankit Sharma: Tahir Hussain's Life Sentence"
-tags: [delhi-riots, tahir-hussain, ankit-sharma, indian-judiciary, ib-officer, legal-precedent, human-rights]
-```
 
 # Justice for Ankit Sharma: Why Tahir Hussain's Life Sentence Matters
 

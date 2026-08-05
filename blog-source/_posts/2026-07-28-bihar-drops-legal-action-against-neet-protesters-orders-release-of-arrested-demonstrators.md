@@ -5,7 +5,7 @@ date: 2026-07-28 01:04:10 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  If you have ever walked through the bustling streets of Patna, you know the distinct energy of the city—a relentless, frantic pulse driven by thousand
 image:
   path: "https://images.unsplash.com/photo-1586705734749-88845fdb9810?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxCaWhhciUyMERyb3BzJTIwTGVnYWx8ZW58MHwwfHx8MTc4NTIwMDY1MHww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "white and blue labeled box"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@biohemplife"
   unsplash_url: "https://unsplash.com/photos/white-and-blue-labeled-box-NbJOiq_H3Zk"
 ---
-
-```yaml
-title: "Justice or Just Politics? Bihar's NEET Protest U-Turn"
-tags: [neet-2024, bihar-politics, nta-controversy, student-rights, education-india, medical-entrance, patna-protests]
-```
 
 # 🎓 When Merit Hits a Breaking Point: The NEET Crisis in Bihar
 

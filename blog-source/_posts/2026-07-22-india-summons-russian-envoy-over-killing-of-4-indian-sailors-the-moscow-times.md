@@ -5,7 +5,7 @@ date: 2026-07-22 01:07:04 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  Something profoundly heavy happened in the Black Sea recently, and it is sending shockwaves through the corridors of power in New Delhi and Moscow. On
 image:
   path: "https://images.unsplash.com/photo-1599076820694-2d5d78332eaa?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxJbmRpYSUyMFN1bW1vbnMlMjBSdXNzaWFufGVufDB8MHx8fDE3ODQ2ODI0MjN8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "silver and black round coin"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@ewankennedy"
   unsplash_url: "https://unsplash.com/photos/silver-and-black-round-coin-3nnq9uOQrOo"
 ---
-
-```yaml
-title: "The MV Golden Leo Tragedy: A Turning Point for India-Russia Ties"
-tags: [india-russia-relations, black-sea-conflict, maritime-security, geopolitics, merchant-navy, international-law, mv-golden-leo]
-```
 
 # 🚢 The MV Golden Leo Tragedy: Is This the Breaking Point for India and Russia?
 

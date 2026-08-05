@@ -5,7 +5,7 @@ date: 2026-07-21 16:09:32 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  <img src="https://images.unsplash.com/photo-1624280252414-45004b6c0444?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxSYWh1bCUyMEdhbmRoaSUyMGRldGFpbmVkJTNBfGVufD
 image:
   path: "https://images.unsplash.com/photo-1778864875180-8aed9336bcec?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxSYWh1bCUyMEdhbmRoaSUyMGRldGFpbmVkJTNBfGVufDB8MHx8fDE3ODQ2NTAxNzF8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "Two men talking to children outdoors"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@saadalii07"
   unsplash_url: "https://unsplash.com/photos/two-men-talking-to-children-outdoors-p8BCyGn5VCE"
 ---
-
-```yaml
-title: "Parliamentary Privilege vs. Police Power: The Real Law"
-tags: [indian-constitution, parliamentary-privilege, article-105, rahul-gandhi, legal-analysis, indian-law, preventive-detention, lok-sabha]
-```
 
 <div class="post-hero">
   <img src="https://images.unsplash.com/photo-1624280252414-45004b6c0444?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxSYWh1bCUyMEdhbmRoaSUyMGRldGFpbmVkJTNBfGVufDB8MHx8fDE3ODQ2NTAxNzF8MA&ixlib=rb-4.1.0&fm=webp&w=780&h=440&fit=crop" alt="man in white dress shirt sitting on tree branch during daytime" loading="lazy" width="780" height="440" data-unsplash-dl="https://api.unsplash.com/photos/-Di6VS0nSqg/download?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwyfHxSYWh1bCUyMEdhbmRoaSUyMGRldGFpbmVkJTNBfGVufDB8MHx8fDE3ODQ2NTAxNzF8MA" />

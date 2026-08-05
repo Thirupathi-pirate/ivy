@@ -6,7 +6,7 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  For years, anyone working in software quality assurance (QA) has been fighting a constant battle with what engineers call the "regression monster." As
 image:
   path: "https://images.unsplash.com/photo-1527430253228-e93688616381?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHx0ZXN0JTIwZnJvbSUyMGJvdHxlbnwwfDB8fHwxNzg0NjA0MzUwfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "blue plastic robot toy"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@emilipothese"
   unsplash_url: "https://unsplash.com/photos/blue-plastic-robot-toy-R4WCbazrD1g"
 ---
-
-```yaml
-title: "Beyond the Script: The Rise of Autonomous AI Testing"
-tags: [software-testing, ai-qa, test-automation, devops, self-healing-tests, generative-ai, software-engineering]
-```
 
 # 🤖 The Bot Revolution in QA: From Boring Scripts to Smart Agents
 

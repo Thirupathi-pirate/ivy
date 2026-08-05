@@ -1,12 +1,12 @@
 ---
 layout: post
-title: "Untitled Post"
+title: "💥 Breaking Down the ‘Heavy Wave’"
 date: 2026-07-30 11:43:32 +0000
 toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  The geopolitical landscape of the Middle East has undergone a fundamental and violent shift. What [Al Jazeera](https://www.aljazeera.com/news/2026/7/3
 image:
   path: "https://images.unsplash.com/photo-1773160634115-a69f5f3688c7?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxVUyUyMGxhdW5jaGVzJTIwJUUyJTgwJTk4aGVhdnl8ZW58MHwwfHx8MTc4NTQxMTgxMnww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "Tail of an airplane with american flag and logo"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@hermeus"
   unsplash_url: "https://unsplash.com/photos/tail-of-an-airplane-with-american-flag-and-logo-SKMwDi3KLbo"
 ---
-
-```yaml
-title: "The Heavy Wave: US-Iran Escalation and Global Stability"
-tags: [geopolitics, middle-east, us-iran-conflict, energy-security, asymmetric-warfare, irgc, national-security]
-```
 
 The geopolitical landscape of the Middle East has undergone a fundamental and violent shift. What [Al Jazeera](https://www.aljazeera.com/news/2026/7/30/us-launches-another-round-of-attacks-on-iran) describes as a "heavy wave" of US strikes on Iranian military targets has effectively dismantled the established rules of engagement. For over a decade, the United States and the Islamic Republic of Iran operated within the confines of a "shadow war"—a sophisticated game of attrition characterized by cyberattacks, maritime skirmishes, and the utilization of proxy militias to maintain plausible deniability.
 

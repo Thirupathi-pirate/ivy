@@ -5,13 +5,8 @@ date: 2026-07-30 01:02:56 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  We all know how high the stakes are for competitive exams in India. When millions of people are fighting for a few thousand seats in medical, engineer
 ---
-
-```yaml
-title: "The War on India's Paper Leak Mafia: 2024 Act Analysis"
-tags: [education, india, public-exams-act, neet, legal-analysis, student-rights, exam-fraud]
-```
 
 # The War on the Paper Leak Mafia: What the New Public Examinations Act Actually Means for Students
 

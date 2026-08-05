@@ -5,7 +5,7 @@ date: 2026-07-23 11:35:12 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  The Ashes is far more than a sequence of five Test matches; it is a psychological war of attrition, a clash of sporting cultures, and a living history
 image:
   path: "https://images.unsplash.com/photo-1765915550935-578b594ac76b?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxBc2hlcyUyMDIwMjclMjBzY2hlZHVsZXxlbnwwfDB8fHwxNzg0ODA2NTEyfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "Cricket stadium with groundsmen covering the pitch."
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@africuz"
   unsplash_url: "https://unsplash.com/photos/cricket-stadium-with-groundsmen-covering-the-pitch-zcLsFdzR5MI"
 ---
-
-```yaml
-title: "The Return of the Nottingham Roar: 2027 Ashes Analysis"
-tags: [cricket, ashes-2027, england-cricket, australia-cricket, trent-bridge, sports-analysis, ecb, test-cricket]
-```
 
 # 🏏 The Return of the Nottingham Roar: Breaking Down the 2027 Ashes Schedule
 

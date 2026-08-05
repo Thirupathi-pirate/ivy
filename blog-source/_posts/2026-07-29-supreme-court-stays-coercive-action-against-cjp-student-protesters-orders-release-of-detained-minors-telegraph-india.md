@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Untitled Post"
+title: "🚩 The Flashpoint: Protests, Police, and the Push for Account"
 date: 2026-07-29 07:34:32 +0000
 toc: true
 mermaid: true

@@ -5,7 +5,7 @@ date: 2026-07-27 16:50:09 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  If you’ve been following the news in Bihar lately, you know things have been incredibly intense for medical aspirants. For months, the coaching hubs o
 image:
   path: "https://images.unsplash.com/photo-1698937051291-356eaf4ca3f5?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxCaWhhciUyMHRvJTIwZHJvcHxlbnwwfDB8fHwxNzg1MTcxMDA5fDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a field with hay bales in the distance"
@@ -14,14 +14,8 @@ image:
   unsplash_url: "https://unsplash.com/photos/a-field-with-hay-bales-in-the-distance-IMoWA8Lu6o8"
 ---
 
-```yaml
-title: "Bihar's NEET Amnesty: Justice or Political Strategy?"
-tags: [neet-2024, bihar-government, student-rights, nta-scandal, medical-education, legal-amnesty, patna-protests, india-education]
-```
-
 # 🩺 Healing the Rift: Why Bihar is Dropping Charges Against NEET Protesters
 
-# ⚖️ Justice or Political Pivot? Inside Bihar's Decision to Clear NEET Protesters' Records
 
 If you’ve been following the news in Bihar lately, you know things have been incredibly intense for medical aspirants. For months, the coaching hubs of Patna—areas like Boring Road and Kankarbagh—and study rooms across the state have been filled with a volatile mix of desperation and anger. For these students, the NEET-UG 2024 exam wasn't just a test of biology, physics, or chemistry; it became a fight for their entire future. When the results finally arrived, instead of providing a clear rank and a path to a medical college, they delivered a national scandal.
 

@@ -6,7 +6,7 @@ toc: true
 mermaid: true
 math: true
 description: >-
-  ```yaml
+  The Cauvery river is far more than a geographical feature; for the millions inhabiting the basins of South India, it is a lifeline, a cultural symbol,
 image:
   path: "https://images.unsplash.com/photo-1646238397157-c9268fc7a3e9?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxDYXV2ZXJ5JTIwRGlzcHV0ZSUyMCUzQXxlbnwwfDB8fHwxNzg1Njg1MjMxfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a couple of boats floating on top of a river"
@@ -14,11 +14,6 @@ image:
   photographer_url: "https://unsplash.com/@photographsbyashish"
   unsplash_url: "https://unsplash.com/photos/a-couple-of-boats-floating-on-top-of-a-river-g165XQGF7Xc"
 ---
-
-```yaml
-title: "The Cauvery Water Conflict: Tamil Nadu vs Karnataka"
-tags: [cauvery-dispute, india-water-wars, tamil-nadu, karnataka, agriculture, supreme-court, climate-change, water-management]
-```
 
 # The Fight for the Cauvery: Why Tamil Nadu and Karnataka are Back in Court
 

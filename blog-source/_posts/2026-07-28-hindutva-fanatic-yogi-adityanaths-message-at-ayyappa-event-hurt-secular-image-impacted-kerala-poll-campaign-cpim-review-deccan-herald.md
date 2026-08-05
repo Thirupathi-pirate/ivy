@@ -5,7 +5,7 @@ date: 2026-07-28 16:29:11 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For decades, Kerala has been heralded as the gold standard for secular politics in India. In this unique sociopolitical landscape, the narrative was t
 image:
   path: "https://images.unsplash.com/photo-1447452001602-7090c7ab2db3?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHwlMjdIaW5kdXR2YSUyMGZhbmF0aWMlMjclMjBZb2dpfGVufDB8MHx8fDE3ODUyNTYxNTB8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "person doing yoga exercises"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@worldsbetweenlines"
   unsplash_url: "https://unsplash.com/photos/person-doing-yoga-exercises-w5SgojGZooI"
 ---
-
-```yaml
-title: "The Saffron Surge: Yogi Adityanath’s Impact on Kerala’s Left"
-tags: [kerala-politics, cpi-m, yogi-adityanath, hindutva, secularism, sabarimala, indian-elections, political-analysis]
-```
 
 # 🚩 The Saffron Surge in God's Own Country: How Yogi Adityanath’s Rhetoric Shook the Left's Fortress
 
