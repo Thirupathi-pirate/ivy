@@ -95,21 +95,101 @@ function splitLongMessage(text: string, maxLen = 4096): string[] {
 }
 
 
-/** Strip unsupported Telegram Markdown syntax before sending */
-function sanitizeTelegramMarkdown(text: string): string {
-  return text
-    // Headings → plain text
-    .replace(/^#{1,6}\s+/gm, "")
-    // Blockquotes → plain text
-    .replace(/^>\s+/gm, "")
-    // Convert **bold** → *bold* (Telegram V1 only supports single *)
-    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
-    // * at line start → • (avoids italic interpretation)
-    .replace(/^(\s*)\*\s+/gm, "$1• ")
-    // Escape underscores to prevent accidental italic in variable names
-    .replace(/_/g, "\\_")
-    // Escape backticks to prevent accidental code blocks
-    .replace(/`/g, "\\`");
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Remove HTML tags/entities — used for plain-text fallback so raw <b> never leaks */
+function stripHtml(s: string): string {
+  return s
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+/** Stream a partial safely: only complete lines are converted so HTML tags are never split */
+function safeHtmlPartial(partial: string, done: boolean): string {
+  if (done) return mdToTelegramHtml(partial);
+  const nl = partial.lastIndexOf("\n");
+  if (nl <= 0) return ""; // no complete line yet — wait for more
+  return mdToTelegramHtml(partial.slice(0, nl + 1));
+}
+
+/**
+ * Convert LLM markdown to Telegram HTML (parse_mode: "HTML").
+ * Telegram Markdown V1 fails the ENTIRE message on a single unbalanced
+ * `*`/`_`, which caused raw markup to be shown instead of formatted text.
+ * HTML only needs <, >, & escaped — far more robust against model output.
+ */
+function mdToTelegramHtml(text: string): string {
+  // 1. Extract code spans first so their contents aren't mangled
+  const codeBlocks: string[] = [];
+  let out = text
+    .replace(/```[\w-]*\n?([\s\S]*?)```/g, (_m, code: string) => {
+      codeBlocks.push(`<pre>${escapeHtml(code.replace(/\n$/, ""))}</pre>`);
+      return `\u0000CODE${codeBlocks.length - 1}\u0000`;
+    })
+    .replace(/`([^`\n]+)`/g, (_m, code: string) => {
+      codeBlocks.push(`<code>${escapeHtml(code)}</code>`);
+      return `\u0000CODE${codeBlocks.length - 1}\u0000`;
+    });
+
+  // 2. Escape HTML entities in the remaining text
+  out = escapeHtml(out);
+
+  // 3. Headings → bold
+  out = out.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
+  // 4. Bold **x**
+  out = out.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+  // 5. Bullet "* item" → "• item", then italic *x*
+  out = out.replace(/^(\s*)\*\s+/gm, "$1• ");
+  out = out.replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
+  // 6. Inline links [text](url)
+  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, url: string) => {
+    return `<a href="${url.replace(/"/g, "&quot;")}">${label}</a>`;
+  });
+
+  // 7. Restore code spans
+  return out.replace(/\u0000CODE(\d+)\u0000/g, (_m, i: string) => codeBlocks[Number(i)]);
+}
+
+/**
+ * Send markdown text rendered as Telegram HTML. Splits long messages, edits
+ * the placeholder message when given, and ALWAYS falls back to plain text
+ * (tags stripped) on any HTML rejection — raw markup must never reach the user.
+ */
+async function sendFormatted(
+  ctx: MyContext,
+  chatId: number,
+  placeholderMsg: { message_id: number } | undefined,
+  markdownText: string
+): Promise<void> {
+  const html = mdToTelegramHtml(markdownText);
+  const parts = splitLongMessage(html);
+  for (let i = 0; i < parts.length; i++) {
+    if (i === 0 && placeholderMsg) {
+      try {
+        await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "HTML" });
+      } catch (e1: any) {
+        const err1 = (e1?.message || "").toLowerCase();
+        // "message is not modified" = streaming already displayed this exact HTML — fine
+        if (!err1.includes("not modified")) {
+          try {
+            await ctx.api.editMessageText(chatId, placeholderMsg.message_id, stripHtml(parts[i]));
+          } catch {}
+        }
+      }
+    } else {
+      try {
+        await ctx.reply(parts[i], { parse_mode: "HTML" });
+      } catch {
+        await ctx.reply(stripHtml(parts[i]));
+      }
+    }
+  }
 }
 
 function d1SessionAdapter(db: D1Database): StorageAdapter<SessionData> {
@@ -396,16 +476,19 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         env,
         history,
         String(ctx.chat.id),
-          async (partial, done) => {
-          if (partial) {
-            const sanitized = sanitizeTelegramMarkdown(partial);
-            let text = sanitized + (done ? "" : "\n...");
-            if (text.length > 4000) text = text.slice(0, 3997) + (done ? "" : "...");
-            try {
-              await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, text, {
-                parse_mode: "Markdown",
-              });
-            } catch {}
+        async (partial, done) => {
+          if (!partial) return;
+          const html = safeHtmlPartial(partial, done);
+          if (!html) return; // wait for a complete line so tags are never split
+          let text = html + (done ? "" : "...");
+          if (text.length > 4000) text = text.slice(0, 3997) + (done ? "" : "...");
+          try {
+            await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, text, {
+              parse_mode: "HTML",
+            });
+          } catch {
+            // HTML rejected (edge-case markup) — fall back to plain text, never raw HTML
+            try { await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, stripHtml(text)); } catch {}
           }
         },
         ctx.session.model
@@ -418,6 +501,9 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       }
 
       if (result.text) {
+        // Replace the streaming placeholder with the full formatted reply (handles
+        // long descriptions + any edge-case markup rejection)
+        await sendFormatted(ctx, ctx.chat.id, placeholder, result.text);
         // Store raw text (not sanitized) so escapes don't compound in history
         history.push({ role: "assistant", content: result.text });
       }
@@ -459,8 +545,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
       const transcript = await transcribeAudio(env, fileUrl);
 
-      await ctx.api.editMessageText(chatId, placeholder.message_id, `*You said:* ${transcript}`, {
-        parse_mode: "Markdown",
+      await ctx.api.editMessageText(chatId, placeholder.message_id, `<b>You said:</b> ${escapeHtml(transcript)}`, {
+        parse_mode: "HTML",
       });
 
       await handleChat(ctx, env, transcript);
@@ -499,8 +585,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
         await ctx.api.editMessageText(
           chatId, placeholder.message_id,
-          `📄 Extracted text from *${fileName}* (${pdfText.length} chars)`,
-          { parse_mode: "Markdown" }
+          `📄 Extracted text from <b>${escapeHtml(fileName)}</b> (${pdfText.length} chars)`,
+          { parse_mode: "HTML" }
         );
 
         await handleChat(ctx, env, `The user uploaded a PDF file "${fileName}". Here is its content:\n\n${pdfText}`);
@@ -521,8 +607,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
         await ctx.api.editMessageText(
           chatId, placeholder.message_id,
-          `📄 Read *${fileName}* (${truncated.length} chars)`,
-          { parse_mode: "Markdown" }
+          `📄 Read <b>${escapeHtml(fileName)}</b> (${truncated.length} chars)`,
+          { parse_mode: "HTML" }
         );
 
         await handleChat(ctx, env, `The user uploaded a file "${fileName}". Here is its content:\n\n${truncated}`);
@@ -532,8 +618,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       return;
     }
 
-    await ctx.reply(`I can't process \`${fileName}\` yet. Supported: PDF, TXT, CSV, JSON, code files, and more text-based formats.`, {
-      parse_mode: "Markdown",
+    await ctx.reply(`I can't process <code>${escapeHtml(fileName)}</code> yet. Supported: PDF, TXT, CSV, JSON, code files, and more text-based formats.`, {
+      parse_mode: "HTML",
     });
   });
 
@@ -585,15 +671,16 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
         history,
         chatIdStr,
         async (partial, done) => {
-          if (partial) {
-            const sanitized = sanitizeTelegramMarkdown(partial);
-            let text = sanitized + (done ? "" : "\n...");
-            if (text.length > 4000) text = text.slice(0, 3997) + (done ? "" : "...");
-            try {
-              await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text, { parse_mode: "Markdown" });
-            } catch {
-              try { await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text); } catch {}
-            }
+          if (!partial) return;
+          const html = safeHtmlPartial(partial, done);
+          if (!html) return; // wait for a complete line so tags are never split
+          let text = html + (done ? "" : "...");
+          if (text.length > 4000) text = text.slice(0, 3997) + (done ? "" : "...");
+          try {
+            await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, text, { parse_mode: "HTML" });
+          } catch {
+            // HTML rejected (edge-case markup) — fall back to plain text, never raw HTML
+            try { await ctx.api.editMessageText(chatId, placeholderMsg!.message_id, stripHtml(text)); } catch {}
           }
         },
         ctx.session.model
@@ -606,25 +693,9 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   }
 
   if (result.text) {
-    const text = sanitizeTelegramMarkdown(result.text);
-    const parts = splitLongMessage(text);
-    for (let i = 0; i < parts.length; i++) {
-      if (i === 0 && placeholderMsg) {
-        try {
-          await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "Markdown" });
-        } catch (e1: any) {
-          try { await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i]); } catch (e2: any) {
-            const errMsg = (e2?.message || "").toLowerCase();
-            // "message is not modified" means the stream already set it — that's fine
-            if (!errMsg.includes("not modified")) {
-              await ctx.reply(parts[i]);
-            }
-          }
-        }
-      } else {
-        await ctx.reply(parts[i]);
-      }
-    }
+    // Format as HTML, split long replies, edit placeholder / reply — with
+    // automatic plain-text fallback so raw markup never leaks to the user
+    await sendFormatted(ctx, chatId, placeholderMsg, result.text);
     // Store the RAW model text in history — sanitized text (escaped \_ \`) would
     // compound escape sequences across turns and pollute what the model sees.
     history.push({ role: "assistant", content: result.text });
@@ -1109,8 +1180,8 @@ async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContex
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             chat_id: row.chat_id,
-            text: `⏰ *Reminder:* ${(row.message || "").slice(0, 200)}`,
-            parse_mode: "Markdown",
+            text: `<b>⏰ Reminder:</b> ${escapeHtml((row.message || "").slice(0, 200))}`,
+            parse_mode: "HTML",
           }),
         });
         if (resp.ok) {
