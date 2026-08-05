@@ -1167,6 +1167,7 @@ async function processAiInternal(
         console.warn(`[${model}] API key not configured, skipping`);
         continue;
       }
+      console.log(`[MODEL] ${isGeminiModel ? "Gemini" : "Groq"} :: ${model} :: turn ${turn}/${maxDepth} :: tools ${useTools ? "on" : "off"}`);
 
       const response = isGeminiModel
         ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)
@@ -1207,6 +1208,7 @@ async function processAiInternal(
     }
   }
 
+  console.warn(`[MODEL] all models exhausted, chain: ${chain.join(" → ")}`);
   return { text: "I'm hitting rate limits or errors across all models right now. Please try again in a minute 💜", modelUsed: "none" };
 }
 
