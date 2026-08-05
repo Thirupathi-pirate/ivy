@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter, webhookCallback } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow } from "./ai";
+import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
 // In-memory dedup for webhook update IDs (replaces KV to save quota)
 const recentUpdates = new Map<number, number>();
@@ -8,6 +9,7 @@ const DEDUP_TTL_MS = 10_000;
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
+  TELEGRAM_CHAT_ID?: string;
   GROQ_API_KEY: string;
   GEMINI_API_KEY?: string;
   GITHUB_PAT: string;
@@ -95,71 +97,11 @@ function splitLongMessage(text: string, maxLen = 4096): string[] {
 }
 
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** Remove HTML tags/entities — used for plain-text fallback so raw <b> never leaks */
-function stripHtml(s: string): string {
-  return s
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-}
-
-/** Stream a partial safely: only complete lines are converted so HTML tags are never split */
-function safeHtmlPartial(partial: string, done: boolean): string {
-  if (done) return mdToTelegramHtml(partial);
-  const nl = partial.lastIndexOf("\n");
-  if (nl <= 0) return ""; // no complete line yet — wait for more
-  return mdToTelegramHtml(partial.slice(0, nl + 1));
-}
-
-/**
- * Convert LLM markdown to Telegram HTML (parse_mode: "HTML").
- * Telegram Markdown V1 fails the ENTIRE message on a single unbalanced
- * `*`/`_`, which caused raw markup to be shown instead of formatted text.
- * HTML only needs <, >, & escaped — far more robust against model output.
- */
-function mdToTelegramHtml(text: string): string {
-  // 1. Extract code spans first so their contents aren't mangled
-  const codeBlocks: string[] = [];
-  let out = text
-    .replace(/```[\w-]*\n?([\s\S]*?)```/g, (_m, code: string) => {
-      codeBlocks.push(`<pre>${escapeHtml(code.replace(/\n$/, ""))}</pre>`);
-      return `\u0000CODE${codeBlocks.length - 1}\u0000`;
-    })
-    .replace(/`([^`\n]+)`/g, (_m, code: string) => {
-      codeBlocks.push(`<code>${escapeHtml(code)}</code>`);
-      return `\u0000CODE${codeBlocks.length - 1}\u0000`;
-    });
-
-  // 2. Escape HTML entities in the remaining text
-  out = escapeHtml(out);
-
-  // 3. Headings → bold
-  out = out.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
-  // 4. Bold **x**
-  out = out.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
-  // 5. Bullet "* item" → "• item", then italic *x*
-  out = out.replace(/^(\s*)\*\s+/gm, "$1• ");
-  out = out.replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
-  // 6. Inline links [text](url)
-  out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, url: string) => {
-    return `<a href="${url.replace(/"/g, "&quot;")}">${label}</a>`;
-  });
-
-  // 7. Restore code spans
-  return out.replace(/\u0000CODE(\d+)\u0000/g, (_m, i: string) => codeBlocks[Number(i)]);
-}
-
 /**
  * Send markdown text rendered as Telegram HTML. Splits long messages, edits
  * the placeholder message when given, and ALWAYS falls back to plain text
  * (tags stripped) on any HTML rejection — raw markup must never reach the user.
+ * Link previews are enabled so shared URLs render as rich cards.
  */
 async function sendFormatted(
   ctx: MyContext,
@@ -172,7 +114,10 @@ async function sendFormatted(
   for (let i = 0; i < parts.length; i++) {
     if (i === 0 && placeholderMsg) {
       try {
-        await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], { parse_mode: "HTML" });
+        await ctx.api.editMessageText(chatId, placeholderMsg.message_id, parts[i], {
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: false, show_above_text: true },
+        });
       } catch (e1: any) {
         const err1 = (e1?.message || "").toLowerCase();
         // "message is not modified" = streaming already displayed this exact HTML — fine
@@ -184,7 +129,10 @@ async function sendFormatted(
       }
     } else {
       try {
-        await ctx.reply(parts[i], { parse_mode: "HTML" });
+        await ctx.reply(parts[i], {
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: false, show_above_text: true },
+        });
       } catch {
         await ctx.reply(stripHtml(parts[i]));
       }
@@ -1061,6 +1009,9 @@ app.get("/init", async (c) => {
     "CREATE INDEX IF NOT EXISTS idx_memories_chat_id ON memories(chat_id)",
     "CREATE TABLE IF NOT EXISTS reminders (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, timestamp INTEGER NOT NULL, message TEXT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS idx_reminders_timestamp ON reminders(timestamp)",
+    "CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, type TEXT NOT NULL, schedule TEXT NOT NULL, message TEXT, keyword TEXT, next_run INTEGER NOT NULL, last_run INTEGER, last_result TEXT, enabled INTEGER NOT NULL DEFAULT 1)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(next_run)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_chat ON jobs(chat_id)",
   ];
   try {
     for (const stmt of statements) {
@@ -1091,6 +1042,60 @@ app.get("/migrate", async (c) => {
   } catch (e: any) {
     return c.text(`D1 migrate error: ${e.message}`, 500);
   }
+});
+
+// ---------- Debug: smoke-test helper (guarded by ADMIN_PASSWORD) ----------
+// POST /debug/smoke with header `x-admin: <ADMIN_PASSWORD>`:
+// ensures the jobs table exists and inserts a reminder job due NOW so the
+// minute cron delivers a test message to TELEGRAM_CHAT_ID. Returns job id.
+app.post("/debug/smoke", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const ddl = [
+    "CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, type TEXT NOT NULL, schedule TEXT NOT NULL, message TEXT, keyword TEXT, next_run INTEGER NOT NULL, last_run INTEGER, last_result TEXT, enabled INTEGER NOT NULL DEFAULT 1)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(next_run)",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_chat ON jobs(chat_id)",
+  ];
+  for (const stmt of ddl) await c.env.IVY_DB.prepare(stmt).run();
+  const chatId = c.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return c.json({ error: "TELEGRAM_CHAT_ID not set" }, 500);
+  // Idempotent: drop previous smoke-test jobs so they don't keep firing daily
+  await c.env.IVY_DB.prepare("DELETE FROM jobs WHERE message = ?").bind("🧪 Ivy smoke test OK — jobs cron works").run();
+  const id = crypto.randomUUID().slice(0, 8);
+  await c.env.IVY_DB.prepare(
+    "INSERT INTO jobs (id, chat_id, type, schedule, message, keyword, next_run, last_run, last_result, enabled) VALUES (?, ?, 'reminder', ?, ?, NULL, ?, NULL, NULL, 1)"
+  )
+    .bind(id, chatId, JSON.stringify({ kind: "cron", expr: "0 9 * * *", tz: "UTC" }), "🧪 Ivy smoke test OK — jobs cron works", Date.now())
+    .run();
+  return c.json({ ok: true, jobId: id, firesIn: "next minute cron tick" });
+});
+
+// POST /debug/jobs — list persisted jobs (verifies D1 writes) [admin]
+app.post("/debug/jobs", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const res = await c.env.IVY_DB.prepare("SELECT id, chat_id, type, schedule, message, keyword, next_run, last_run, last_result, enabled FROM jobs ORDER BY next_run ASC LIMIT 20").all();
+  return c.json({ ok: true, count: res.results?.length || 0, jobs: res.results || [] });
+});
+
+// POST /debug/run — process due reminders + jobs inline (same code as cron) [admin]
+app.post("/debug/run", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const out = await processDueJobs(c.env);
+  return c.json({ ok: true, ...out });
+});
+
+// POST /debug/jobs-clean — delete all jobs (dev tool) [admin]
+app.post("/debug/jobs-clean", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const res = await c.env.IVY_DB.prepare("DELETE FROM jobs").run();
+  return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
 });
 
 app.all("*", async (c) => {
@@ -1166,9 +1171,17 @@ app.onError((err, c) => {
   return c.text("OK", 200);
 });
 
-// ---------- Cron: Fire due reminders ----------
+// ---------- Cron: Fire due reminders + recurring jobs ----------
 async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+  await processDueJobs(env);
+}
+
+// Process due reminders + recurring jobs. Shared by the minute cron and the
+// /debug/run admin route (so job delivery can be exercised on demand).
+async function processDueJobs(env: Env): Promise<{ reminders: number; jobs: number }> {
   const now = Date.now();
+  let reminders = 0;
+  let jobs = 0;
   try {
     const results = await env.IVY_DB.prepare(
       "SELECT id, chat_id, timestamp, message FROM reminders WHERE timestamp <= ?"
@@ -1186,6 +1199,7 @@ async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContex
         });
         if (resp.ok) {
           await env.IVY_DB.prepare("DELETE FROM reminders WHERE id = ?").bind(row.id).run();
+          reminders++;
         }
       } catch {
         // Network error — leave reminder for next cron tick
@@ -1194,6 +1208,29 @@ async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContex
   } catch (e) {
     console.error("Cron reminder error:", e);
   }
+
+  // Recurring jobs (self-service cron: daily/weekly/hourly reminders + keyword alerts)
+  try {
+    const due = await env.IVY_DB.prepare(
+      "SELECT id, chat_id, type, schedule, message, keyword, next_run, last_run, last_result, enabled FROM jobs WHERE enabled = 1 AND next_run <= ?"
+    ).bind(now).all<JobRow>();
+    for (const job of due.results || []) {
+      try {
+        await runScheduledJob(env, job);
+        jobs++;
+      } catch (e) {
+        console.error(`Job ${job.id} (${job.type}) error:`, e);
+      }
+      // Advance to the next run; guard against hot-looping on tight schedules
+      let next = computeJobNextRun(job.schedule, Math.max(job.next_run, now));
+      if (next <= now) next = now + 60000;
+      await env.IVY_DB.prepare("UPDATE jobs SET next_run = ?, last_run = ? WHERE id = ?").bind(next, Date.now(), job.id).run();
+    }
+    if (due.results?.length) console.log(`[CRON] processed ${due.results.length} due job(s), delivered ${jobs}`);
+  } catch (e) {
+    console.error("Cron jobs error:", e);
+  }
+  return { reminders, jobs };
 }
 
 export default { fetch: app.fetch, scheduled };

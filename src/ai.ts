@@ -1,4 +1,5 @@
 const GROQ_API = "https://api.groq.com/openai/v1";
+import { escapeHtml, mdToTelegramHtml } from "./markdown";
 
 export const MODELS = [
   // Gemini (primary chat provider)
@@ -106,6 +107,462 @@ function getCurrentTime(timezone?: string): string {
     }
   }
   return now.toISOString();
+}
+
+// ===================== Timezone + Cron (self-service jobs) =====================
+
+function isValidTz(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const tzFmtCache = new Map<string, Intl.DateTimeFormat>();
+function getTzFmt(tz: string): Intl.DateTimeFormat {
+  let fmt = tzFmtCache.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hourCycle: "h23",
+    });
+    tzFmtCache.set(tz, fmt);
+  }
+  return fmt;
+}
+
+/** Wall-clock parts of `ms` in an IANA timezone */
+function zonedParts(ms: number, tz: string): { y: number; mo: number; d: number; h: number; mi: number; dow: number } {
+  const parts = getTzFmt(tz).formatToParts(ms);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const y = get("year");
+  const mo = get("month");
+  const d = get("day");
+  const h = get("hour");
+  const mi = get("minute");
+  const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay(); // 0 = Sunday
+  return { y, mo, d, h, mi, dow };
+}
+
+/** Convert a wall-clock datetime in `tz` to UTC epoch ms (DST-aware via offset refinement) */
+export function zonedToUtc(y: number, mo: number, d: number, h: number, mi: number, tz: string): number {
+  const target = Date.UTC(y, mo - 1, d, h, mi);
+  let guess = target;
+  for (let i = 0; i < 2; i++) {
+    const p = zonedParts(guess, tz);
+    const wall = Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi);
+    guess = target - (wall - guess); // u_{n+1} = W - offset(u_n)
+  }
+  return guess;
+}
+
+/** Next occurrence of HH:MM in `tz` after fromMs */
+function nextTimeInTz(hh: number, mm: number, tz: string, fromMs: number): number {
+  const now = zonedParts(fromMs, tz);
+  let t = zonedToUtc(now.y, now.mo, now.d, hh, mm, tz);
+  if (t <= fromMs) t = zonedToUtc(now.y, now.mo, now.d + 1, hh, mm, tz);
+  return t;
+}
+
+interface CronExpr {
+  minute: Set<number>;
+  hour: Set<number>;
+  dom: Set<number>;
+  month: Set<number>;
+  dow: Set<number>;
+  domStar: boolean;
+  dowStar: boolean;
+}
+
+function parseCronField(field: string, min: number, max: number): { values: Set<number>; isStar: boolean } {
+  const values = new Set<number>();
+  let isStar = false;
+  for (const raw of field.split(",")) {
+    const part = raw.trim();
+    if (!part) continue;
+    if (part === "*") {
+      isStar = true;
+      for (let i = min; i <= max; i++) values.add(i);
+      continue;
+    }
+    const starStep = part.match(/^\*\/(\d+)$/);
+    if (starStep) {
+      isStar = true;
+      const step = Number(starStep[1]) || 1;
+      for (let i = min; i <= max; i += step) values.add(i);
+      continue;
+    }
+    const m = part.match(/^(\d+)(?:-(\d+))?(?:\/(\d+))?$/);
+    if (!m) continue;
+    const start = Number(m[1]);
+    const end = m[2] ? Number(m[2]) : start;
+    const step = m[3] ? Number(m[3]) : 1;
+    if (start < min || end > max || start > end) continue;
+    for (let i = start; i <= end; i += step) values.add(i);
+  }
+  return { values, isStar };
+}
+
+/** Parse a 5-field cron expression: minute hour dom month dow (dow: 0/7 = Sunday) */
+export function parseCron(expr: string): CronExpr | null {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const minute = parseCronField(parts[0], 0, 59);
+  const hour = parseCronField(parts[1], 0, 23);
+  const dom = parseCronField(parts[2], 1, 31);
+  const month = parseCronField(parts[3], 1, 12);
+  const dowRaw = parseCronField(parts[4], 0, 7);
+  if (minute.values.size === 0 || hour.values.size === 0 || dom.values.size === 0 || month.values.size === 0 || dowRaw.values.size === 0) return null;
+  const dow = new Set<number>();
+  for (const v of dowRaw.values) dow.add(v === 7 ? 0 : v);
+  return {
+    minute: minute.values,
+    hour: hour.values,
+    dom: dom.values,
+    month: month.values,
+    dow,
+    domStar: dom.isStar,
+    dowStar: dowRaw.isStar,
+  };
+}
+
+/** Next UTC epoch ms matching `expr` in `tz` after fromMs */
+export function nextRunFromCron(expr: string, fromMs: number, tz: string): number {
+  const c = parseCron(expr);
+  if (!c) return fromMs + 24 * 3600 * 1000;
+  let t = Math.floor(fromMs / 60000) * 60000 + 60000;
+  const guard = 366 * 24 * 60;
+  for (let i = 0; i < guard; i++) {
+    const p = zonedParts(t, tz);
+    if (!c.month.has(p.mo)) {
+      t = zonedToUtc(p.y, p.mo + 1, 1, 0, 0, tz);
+      continue;
+    }
+    // dom/dow: standard cron semantics — if both restricted, match EITHER; if one is *, match the other
+    const dayOk = c.domStar ? c.dow.has(p.dow) : c.dowStar ? c.dom.has(p.d) : c.dom.has(p.d) || c.dow.has(p.dow);
+    if (!dayOk) {
+      t = zonedToUtc(p.y, p.mo, p.d + 1, 0, 0, tz);
+      continue;
+    }
+    if (!c.hour.has(p.h)) {
+      t = zonedToUtc(p.y, p.mo, p.d, p.h + 1, 0, tz);
+      continue;
+    }
+    if (!c.minute.has(p.mi)) {
+      t += 60000;
+      continue;
+    }
+    return t;
+  }
+  return fromMs + 24 * 3600 * 1000;
+}
+
+// ===================== Jobs (recurring reminders + keyword alerts) =====================
+
+interface Schedule {
+  kind: "cron" | "interval";
+  expr?: string;
+  minutes?: number;
+  tz: string;
+}
+
+export interface JobRow {
+  id: string;
+  chat_id: string;
+  type: string;
+  schedule: string;
+  message?: string | null;
+  keyword?: string | null;
+  next_run: number;
+  last_run?: number | null;
+  last_result?: string | null;
+  enabled?: number;
+}
+
+const DAY_INDEX: Record<string, number> = {
+  sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6,
+};
+
+/** Map natural-language frequency args → machine schedule */
+export function buildSchedule(
+  frequency: string,
+  time?: string,
+  dayOfWeek?: string,
+  intervalHours?: number,
+  cronExpr?: string,
+  timezone?: string
+): Schedule | null {
+  const tz = timezone && isValidTz(timezone) ? timezone : "UTC";
+  let h = 9;
+  let m = 0;
+  if (time && /^\d{1,2}:\d{2}$/.test(time)) {
+    const [hh, mm] = time.split(":").map(Number);
+    if (hh > 23 || mm > 59) return null;
+    h = hh;
+    m = mm;
+  }
+  switch ((frequency || "").toLowerCase()) {
+    case "daily":
+      return { kind: "cron", expr: `${m} ${h} * * *`, tz };
+    case "weekly": {
+      const dow = dayOfWeek ? DAY_INDEX[dayOfWeek.toLowerCase()] : 1;
+      if (dow === undefined) return null;
+      return { kind: "cron", expr: `${m} ${h} * * ${dow}`, tz };
+    }
+    case "weekdays":
+      return { kind: "cron", expr: `${m} ${h} * * 1-5`, tz };
+    case "weekends":
+      return { kind: "cron", expr: `${m} ${h} * * 0,6`, tz };
+    case "hourly": {
+      const mins = Math.max(1, Math.floor(intervalHours ?? 1) * 60);
+      return { kind: "interval", minutes: mins, tz };
+    }
+    case "custom": {
+      if (!cronExpr || !parseCron(cronExpr)) return null;
+      return { kind: "cron", expr: cronExpr, tz };
+    }
+    default:
+      return null;
+  }
+}
+
+/** Compute the next UTC run time for a stored schedule JSON */
+export function computeJobNextRun(scheduleJson: string, fromMs: number): number {
+  try {
+    const s: Schedule = JSON.parse(scheduleJson);
+    if (s.kind === "interval") {
+      return fromMs + Math.max(1, s.minutes ?? 60) * 60000;
+    }
+    if (s.kind === "cron" && s.expr) {
+      const next = nextRunFromCron(s.expr, fromMs, s.tz || "UTC");
+      return next > fromMs ? next : fromMs + 60000;
+    }
+  } catch {}
+  return fromMs + 24 * 3600 * 1000;
+}
+
+async function createJob(
+  db: D1Database,
+  chatId: string,
+  type: string,
+  schedule: Schedule,
+  payload: { message?: string; keyword?: string }
+): Promise<{ id: string; next_run: number } | null> {
+  const id = crypto.randomUUID().slice(0, 8);
+  const next_run = computeJobNextRun(JSON.stringify(schedule), Date.now());
+  await db
+    .prepare(
+      "INSERT INTO jobs (id, chat_id, type, schedule, message, keyword, next_run, last_run, last_result, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1)"
+    )
+    .bind(id, chatId, type, JSON.stringify(schedule), payload.message ?? null, payload.keyword ?? null, next_run)
+    .run();
+  return { id, next_run };
+}
+
+async function listJobs(db: D1Database, chatId: string): Promise<JobRow[]> {
+  const results = await db
+    .prepare("SELECT id, type, schedule, message, keyword, next_run, enabled FROM jobs WHERE chat_id = ? AND enabled = 1 ORDER BY next_run ASC")
+    .bind(chatId)
+    .all<JobRow>();
+  return results.results || [];
+}
+
+async function cancelJob(db: D1Database, chatId: string, jobId: string): Promise<boolean> {
+  const result = await db.prepare("DELETE FROM jobs WHERE id = ? AND chat_id = ?").bind(jobId, chatId).run();
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * Execute a due job (called by the worker cron). Sends the Telegram payload and
+ * updates keyword dedup state. Throws on send failure so the tick can log it.
+ */
+export async function runScheduledJob(env: Env, job: JobRow): Promise<void> {
+  if (job.type === "reminder") {
+    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: job.chat_id,
+        text: `<b>⏰ Recurring reminder:</b> ${escapeHtml((job.message || "").slice(0, 200))}`,
+        parse_mode: "HTML",
+      }),
+    });
+    if (!resp.ok) throw new Error(`Telegram send failed: ${resp.status}`);
+    console.log(`[JOB] reminder ${job.id} delivered to ${job.chat_id}`);
+    return;
+  }
+  if (job.type === "keyword") {
+    if (!env.TAVILY_API_KEY) {
+      console.warn("[JOB] keyword alert skipped: no TAVILY_API_KEY");
+      return;
+    }
+    const keyword = job.keyword || "";
+    const result = await searchWeb(env.TAVILY_API_KEY, keyword);
+    // Track seen URLs so the user only hears about NEW results
+    const urls = [...result.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g)].map((mm) => mm[2]);
+    let seen: string[] = [];
+    try {
+      seen = JSON.parse(job.last_result || "{}").urls || [];
+    } catch {}
+    if (urls.length === 0 || urls.some((u) => !seen.includes(u))) {
+      const body = mdToTelegramHtml(result);
+      const text = `<b>🔔 Keyword alert:</b> <i>${escapeHtml(keyword)}</i>\n\n${body}`;
+      const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: job.chat_id, text: text.slice(0, 4096), parse_mode: "HTML" }),
+      });
+      if (!resp.ok) throw new Error(`Telegram send failed: ${resp.status}`);
+      console.log(`[JOB] keyword alert ${job.id} sent to ${job.chat_id} (${urls.length} urls)`);
+    } else {
+      console.log(`[JOB] keyword alert ${job.id}: no new results (seen ${seen.length} urls)`);
+    }
+    await env.IVY_DB.prepare("UPDATE jobs SET last_result = ? WHERE id = ?").bind(JSON.stringify({ urls }), job.id).run();
+    return;
+  }
+  throw new Error(`Unknown job type: ${job.type}`);
+}
+
+// ===================== Weather (Open-Meteo, free, no key) =====================
+
+const WMO_CODES: Record<number, string> = {
+  0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+  45: "Fog", 48: "Depositing rime fog",
+  51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+  56: "Light freezing drizzle", 57: "Dense freezing drizzle",
+  61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+  66: "Light freezing rain", 67: "Heavy freezing rain",
+  71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow", 77: "Snow grains",
+  80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+  85: "Slight snow showers", 86: "Heavy snow showers",
+  95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail",
+};
+
+/** Legacy/alternate city names → official names understood by Open-Meteo geocoding */
+const CITY_ALIASES: Record<string, string> = {
+  bangalore: "Bengaluru",
+  bangaluru: "Bengaluru",
+  bombay: "Mumbai",
+  calcutta: "Kolkata",
+  madras: "Chennai",
+  newdelhi: "New Delhi",
+  delhi: "New Delhi",
+};
+
+async function getWeather(city: string): Promise<string> {
+  try {
+    const key = city.trim().toLowerCase().replace(/\s+/g, "");
+    const searchName = CITY_ALIASES[key] ?? city.trim();
+    const geoResp = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=10&language=en&format=json`
+    );
+    if (!geoResp.ok) return `Weather lookup failed (${geoResp.status}).`;
+    const geo: any = await geoResp.json();
+    // Prefer the largest populated place (handles ambiguous names like "Bangalore")
+    const results: any[] = (geo.results || []).slice().sort((a: any, b: any) => (b.population || 0) - (a.population || 0));
+    const loc = results[0];
+    if (!loc) return `Couldn't find a place called "${city}". Try a larger city name.`;
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
+      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2`;
+    const wResp = await fetch(url);
+    if (!wResp.ok) return `Weather API error (${wResp.status}).`;
+    const w: any = await wResp.json();
+    const cur = w.current || {};
+    const desc = WMO_CODES[cur.weather_code] ?? `Code ${cur.weather_code}`;
+    const tMax = w.daily?.temperature_2m_max?.[0];
+    const tMin = w.daily?.temperature_2m_min?.[0];
+    const time = cur.time ? ` at ${cur.time.slice(11)}` : "";
+    return (
+      `🌤️ **Weather in ${loc.name}${loc.country ? ", " + loc.country : ""}**${time}:\n` +
+      `• ${desc}\n` +
+      `• Temperature: ${cur.temperature_2m ?? "?"}°C (feels like ${cur.apparent_temperature ?? "?"}°C)\n` +
+      `• Humidity: ${cur.relative_humidity_2m ?? "?"}%\n` +
+      `• Wind: ${cur.wind_speed_10m ?? "?"} km/h\n` +
+      `• Today: ${tMin ?? "?"}°C min / ${tMax ?? "?"}°C max`
+    );
+  } catch (e: any) {
+    return `Weather error: ${e.message}`;
+  }
+}
+
+// ===================== YouTube Transcript =====================
+
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+const INNERTUBE_CLIENTS = [
+  { clientName: "IOS", clientVersion: "20.12.54" },
+  { clientName: "ANDROID", clientVersion: "20.12.54", androidSdkVersion: 30 },
+];
+
+async function fetchYouTubePlayerResponse(videoId: string): Promise<any | null> {
+  // Innertube player API (public web key used by YouTube's own web client) — no cookies needed
+  for (const client of INNERTUBE_CLIENTS) {
+    try {
+      const resp = await fetch("https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoId, context: { client } }),
+      });
+      if (resp.ok) {
+        const data: any = await resp.json();
+        if (data?.captions?.playerCaptionsTracklistRenderer?.captionTracks) return data;
+      }
+    } catch {}
+  }
+  // Fallback: scrape the watch page for ytInitialPlayerResponse
+  try {
+    const html = await (await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: { "Accept-Language": "en" } })).text();
+    const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{.*?\});\s*(?:var\s|<\/script|$)/s);
+    if (m) {
+      try {
+        return JSON.parse(m[1]);
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+async function getYoutubeTranscript(url: string): Promise<string> {
+  const videoId = extractYouTubeId(url);
+  if (!videoId) return "Could not extract a YouTube video ID from that URL.";
+  const player = await fetchYouTubePlayerResponse(videoId);
+  const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    return `No captions available for this video${player?.videoDetails?.title ? ` ("${player.videoDetails.title}")` : ""}. The uploader may have captions disabled.`;
+  }
+  // Prefer manual English captions, then any non-ASR track
+  const rank = (t: any) => (t.languageCode?.startsWith("en") ? 0 : 1) + (t.kind === "asr" ? 2 : 0);
+  const track = [...tracks].sort((a, b) => rank(a) - rank(b))[0];
+  const tResp = await fetch(`${track.baseUrl}&fmt=json3`);
+  if (!tResp.ok) return `Failed to fetch captions (${tResp.status}).`;
+  const data: any = await tResp.json();
+  const events: any[] = data.events || [];
+  let text = "";
+  for (const ev of events) {
+    const segs = ev.segs || [];
+    for (const seg of segs) text += seg.utf8 ?? "";
+    if (segs.length) text += "\n";
+  }
+  text = text.replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) return "Captions exist but the transcript is empty.";
+  const title = player?.videoDetails?.title;
+  return (
+    `Video: ${title ?? videoId} (${track.languageCode ?? "?"}, ${track.kind === "asr" ? "auto-generated" : "manual"} captions)\n\n` +
+    `${text.slice(0, 20000)}${text.length > 20000 ? "\n\n[truncated]" : ""}`
+  );
 }
 
 // ===================== Movie Tools =====================
@@ -460,16 +917,21 @@ async function discoverTavily(apiKey: string, genres?: string, year?: string, mi
 
 // ===================== Reminder Tools =====================
 
-async function createReminder(db: D1Database, chatId: string, timeStr: string, message: string) {
+async function createReminder(db: D1Database, chatId: string, timeStr: string, message: string, timezone?: string) {
   let timestamp: number;
   if (/^\d{1,2}:\d{2}$/.test(timeStr)) {
     const [h, m] = timeStr.split(":").map(Number);
     if (h > 23 || m > 59) return null;
-    const now = new Date();
-    const t = new Date(now);
-    t.setUTCHours(h, m, 0, 0);
-    if (t <= now) t.setUTCDate(t.getUTCDate() + 1);
-    timestamp = t.getTime();
+    if (timezone && isValidTz(timezone)) {
+      // Timezone-aware: interpret HH:MM in the user's timezone
+      timestamp = nextTimeInTz(h, m, timezone, Date.now());
+    } else {
+      const now = new Date();
+      const t = new Date(now);
+      t.setUTCHours(h, m, 0, 0);
+      if (t <= now) t.setUTCDate(t.getUTCDate() + 1);
+      timestamp = t.getTime();
+    }
   } else {
     timestamp = new Date(timeStr).getTime();
     if (isNaN(timestamp)) return null;
@@ -526,12 +988,13 @@ function getTools(env: Env) {
       type: "function",
       function: {
         name: "create_reminder",
-        description: "Schedule a reminder at a specific time. Call this when the user asks to be reminded or notified.",
+        description: "Schedule a one-time reminder at a specific time. Call this when the user asks to be reminded or notified once.",
         parameters: {
           type: "object",
           properties: {
-            time: { type: "string", description: "Time in HH:MM (24-hour) format" },
+            time: { type: "string", description: "Time in HH:MM (24-hour) format, or an ISO date string" },
             message: { type: "string", description: "The reminder message" },
+            timezone: { type: "string", description: "Optional IANA timezone (e.g. 'Asia/Kolkata') to interpret HH:MM in. Defaults to UTC." },
           },
           required: ["time", "message"],
         },
@@ -611,6 +1074,94 @@ function getTools(env: Env) {
           properties: {
             timezone: { type: "string", description: "Optional IANA timezone name" },
           },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_weather",
+        description: "Get current weather and today's forecast for a city. Use when the user asks about weather, temperature, rain, or forecast.",
+        parameters: {
+          type: "object",
+          properties: {
+            city: { type: "string", description: "City name, e.g. 'Bangalore' or 'London'" },
+          },
+          required: ["city"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_youtube_transcript",
+        description: "Get the transcript (captions) of a YouTube video. Use when the user asks to summarize a YouTube video or wants its transcript or key points.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The YouTube video URL or ID" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "create_recurring_reminder",
+        description: "Create a recurring job that fires repeatedly — daily, weekly, weekdays, weekends, every N hours, or a custom cron expression. Use when the user says things like 'remind me every day at 8am to drink water', 'every Monday at 9am', 'every 2 hours'. Supports timezone-aware scheduling.",
+        parameters: {
+          type: "object",
+          properties: {
+            frequency: { type: "string", enum: ["daily", "weekly", "weekdays", "weekends", "hourly", "custom"], description: "How often the job runs" },
+            time: { type: "string", description: "Time of day in HH:MM (24-hour) for daily/weekly/weekdays/weekends" },
+            day_of_week: { type: "string", description: "Day name (e.g. 'monday') required for frequency=weekly" },
+            interval_hours: { type: "number", description: "Hours between runs for frequency=hourly (default 1)" },
+            cron_expr: { type: "string", description: "5-field cron expression for frequency=custom, e.g. '0 8 * * *' or '*/30 * * * *'" },
+            message: { type: "string", description: "The reminder message" },
+            timezone: { type: "string", description: "Optional IANA timezone like 'Asia/Kolkata' or 'America/New_York' (default UTC)" },
+          },
+          required: ["frequency", "message"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "create_keyword_alert",
+        description: "Create a recurring keyword alert that searches the web and notifies the user when there are NEW results. Use when the user says 'notify me when X happens', 'alert me about X', 'watch for X', 'keep an eye on X'.",
+        parameters: {
+          type: "object",
+          properties: {
+            keyword: { type: "string", description: "The search keyword or phrase to watch" },
+            frequency: { type: "string", enum: ["daily", "hourly", "weekly", "custom"], description: "How often to check (default daily)" },
+            time: { type: "string", description: "Time of day HH:MM (24-hour) for daily/weekly" },
+            cron_expr: { type: "string", description: "5-field cron expression for frequency=custom" },
+            timezone: { type: "string", description: "Optional IANA timezone (default UTC)" },
+          },
+          required: ["keyword"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_jobs",
+        description: "List all active recurring jobs (recurring reminders and keyword alerts) with their next run time.",
+        parameters: { type: "object", properties: {} },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "cancel_job",
+        description: "Cancel/delete a recurring job (recurring reminder or keyword alert) by its ID.",
+        parameters: {
+          type: "object",
+          properties: {
+            job_id: { type: "string", description: "The job ID to cancel" },
+          },
+          required: ["job_id"],
         },
       },
     },
@@ -697,7 +1248,7 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
   if (typeof args !== "object" || args === null) args = {};
   switch (toolCall.function.name) {
     case "create_reminder": {
-      const result = await createReminder(env.IVY_DB, chatId, args.time, args.message);
+      const result = await createReminder(env.IVY_DB, chatId, args.time, args.message, args.timezone);
       if (!result) return "Could not parse that time. Please use HH:MM format.";
       return JSON.stringify({
         status: "created",
@@ -706,6 +1257,54 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
         display: `<t:${Math.floor(result.timestamp / 1000)}:f>`,
         message: args.message,
       });
+    }
+    case "create_recurring_reminder": {
+      const schedule = buildSchedule(args.frequency, args.time, args.day_of_week, args.interval_hours, args.cron_expr, args.timezone);
+      if (!schedule) {
+        return JSON.stringify({ status: "error", message: "Could not parse that schedule. Use frequency daily/weekly/weekdays/weekends/hourly/custom with time HH:MM." });
+      }
+      const job = await createJob(env.IVY_DB, chatId, "reminder", schedule, { message: args.message });
+      if (!job) return JSON.stringify({ status: "error" });
+      return JSON.stringify({
+        status: "created",
+        id: job.id,
+        type: "recurring reminder",
+        schedule: schedule,
+        next_run: job.next_run,
+        display: `<t:${Math.floor(job.next_run / 1000)}:f>`,
+      });
+    }
+    case "create_keyword_alert": {
+      const schedule = buildSchedule(args.frequency || "daily", args.time, undefined, undefined, args.cron_expr, args.timezone);
+      if (!schedule) return JSON.stringify({ status: "error", message: "Could not parse that schedule." });
+      const job = await createJob(env.IVY_DB, chatId, "keyword", schedule, { keyword: args.keyword });
+      if (!job) return JSON.stringify({ status: "error" });
+      return JSON.stringify({
+        status: "created",
+        id: job.id,
+        type: "keyword alert",
+        keyword: args.keyword,
+        schedule: schedule,
+        next_run: job.next_run,
+        display: `<t:${Math.floor(job.next_run / 1000)}:f>`,
+      });
+    }
+    case "list_jobs": {
+      const items = await listJobs(env.IVY_DB, chatId);
+      return JSON.stringify(
+        items.map((j) => ({
+          id: j.id,
+          type: j.type,
+          message: j.message || j.keyword || "",
+          schedule: j.schedule,
+          next_run: j.next_run,
+          display: `<t:${Math.floor(j.next_run / 1000)}:R>`,
+        }))
+      );
+    }
+    case "cancel_job": {
+      const ok = await cancelJob(env.IVY_DB, chatId, args.job_id);
+      return JSON.stringify({ status: ok ? "cancelled" : "not_found" });
     }
     case "list_reminders": {
       const items = await listReminders(env.IVY_DB, chatId);
@@ -732,6 +1331,10 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
       return await fetchUrl(args.url);
     case "get_current_time":
       return getCurrentTime(args.timezone);
+    case "get_weather":
+      return await getWeather(args.city);
+    case "get_youtube_transcript":
+      return await getYoutubeTranscript(args.url);
     case "get_movie_info": {
       // TMDB → Reddit → Tavily (Reddit-targeted)
       if (env.TMDB_API_KEY) {
@@ -1114,7 +1717,13 @@ function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | nul
 
 // ===================== Main AI Processor with GOAP + Tool Loop =====================
 
-const TOOL_KEYWORDS = ["remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in"];
+const TOOL_KEYWORDS = [
+  "remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in",
+  "weather", "forecast", "temperature", "rain", "youtube", "video transcript", "summarize this video", "summarize the video",
+  "every day", "every week", "every monday", "every tuesday", "every wednesday", "every thursday", "every friday", "every saturday", "every sunday",
+  "every hour", "every 2 hours", "daily", "weekly", "weekdays", "weekends",
+  "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
+];
 
 function needsTools(messages: ChatMessage[]): boolean {
   // Only inspect the latest user message. Scanning the whole history means one
