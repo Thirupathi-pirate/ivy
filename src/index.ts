@@ -25,6 +25,8 @@ interface Env {
   DISCORD_APP_ID: string;
   DISCORD_PUBLIC_KEY: string;
   DISCORD_RELAY_SECRET?: string;
+  /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
+  IVY_PERSONA?: string;
 }
 
 interface SessionData {
@@ -58,14 +60,20 @@ function getSystemPrompt(opts: {
   personality?: SessionData["personality"];
   knowledge?: string;
   emotion?: { emotion: string; intensity: number; cues?: string[] };
+  persona?: string;
 }): string {
-  const { memories, hasMovies, activePage, personality, knowledge, emotion } = opts;
+  const { memories, hasMovies, activePage, personality, knowledge, emotion, persona } = opts;
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
     "You're helpful and friendly, like a good friend who happens to be very knowledgeable. " +
     "Use memory_save to remember things the user tells you about themselves and memory_recall to retrieve them. " +
     "You have persistent memory across conversations — anything saved via memory_save is loaded automatically next time we talk. " +
     `Current UTC time is: ${new Date().toISOString()}`;
+
+  if (persona) {
+    prompt +=
+      `\n\n👑 <Persona override> (your core identity — always follow this, it takes precedence over the description above):\n${persona}`;
+  }
 
   if (personality && (personality.formality || personality.humor || personality.empathy)) {
     const f = personality.formality || "balanced";
@@ -728,6 +736,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         hasMovies,
         personality: ctx.session.personality,
         knowledge: await loadKnowledge(env.IVY_DB, String(chatIdForMem)),
+        persona: env.IVY_PERSONA,
       }) +
         "\n\n📸 When shown an image, describe it in rich detail — objects, colors, composition, mood, and any text visible.";
       const sysIdx = history.findIndex((m) => m.role === "system");
@@ -923,6 +932,7 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
     personality: ctx.session.personality,
     knowledge,
     emotion,
+    persona: env.IVY_PERSONA,
   });
   const sysIdx = history.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
@@ -1125,7 +1135,7 @@ async function handleDiscordCommand(env: Env, interaction: any, token: string) {
       const text = interaction.data.options?.find((o: any) => o.name === "message")?.value || "";
       const memories = await loadUserMemories(env.IVY_DB, sessionKey);
       const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt({ memories, hasMovies });
+      const sysPrompt = getSystemPrompt({ memories, hasMovies, persona: env.IVY_PERSONA });
 
       const row = await env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
       const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
@@ -1297,7 +1307,7 @@ app.post("/chat-message", async (c) => {
 
       const memories = await loadUserMemories(c.env.IVY_DB, sessionKey);
       const hasMovies = !!(c.env.TMDB_API_KEY || (c.env.REDDIT_CLIENT_ID && c.env.REDDIT_CLIENT_SECRET) || c.env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt({ memories, hasMovies });
+      const sysPrompt = getSystemPrompt({ memories, hasMovies, persona: c.env.IVY_PERSONA });
 
       const row = await c.env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
       const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };

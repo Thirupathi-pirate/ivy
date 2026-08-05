@@ -37,6 +37,8 @@ interface Env {
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
   IVY_DB: D1Database;
+  /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
+  IVY_PERSONA?: string;
 }
 
 interface ChatMessage {
