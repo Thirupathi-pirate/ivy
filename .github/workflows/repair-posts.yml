@@ -1,0 +1,134 @@
+name: Repair Broken Posts
+
+on:
+  schedule:
+    - cron: '30 */6 * * *'    # Every 6 hours (02:30, 08:30, 14:30, 20:30 UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  RUBY_VERSION: '3.3'
+
+concurrency:
+  group: repair-posts
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Idempotent: only rewrites files with real fixes, so `git diff` below
+      # is the source of truth for whether anything actually changed.
+      - name: Run repair script
+        run: python3 scripts/repair_posts.py
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet -- blog-source/_posts/; then
+            echo "No repairs needed — nothing changed."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "REPAIR_COUNT=$(git diff --name-only -- blog-source/_posts/ | wc -l)" >> "$GITHUB_ENV"
+            echo "REPAIRED_FILES=$(git diff --name-only -- blog-source/_posts/ | sed 's|blog-source/_posts/||; s|\.md$||' | tr '\n' ', ' | sed 's/, $//')" >> "$GITHUB_ENV"
+          fi
+
+      - name: Commit fixes to main
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add blog-source/_posts/
+          git commit -m "fix: auto-repair broken blog posts [skip ci]"
+          git pull --rebase --autostash || true
+
+      - name: Set up Ruby
+        if: steps.changes.outputs.changed == 'true'
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+          working-directory: blog-source
+
+      - name: Build Jekyll site
+        if: steps.changes.outputs.changed == 'true'
+        run: JEKYLL_ENV=production bundle exec jekyll build
+        working-directory: blog-source
+
+      - name: Deploy to GitHub Pages
+        if: steps.changes.outputs.changed == 'true'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: blog-source/_site
+          publish_branch: gh-pages
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          cname: blog.aaruvi.space
+
+      - name: Push fixes to main
+        if: steps.changes.outputs.changed == 'true'
+        run: git push || true
+
+      # Fail loudly on purge errors (the `|| true`-swallowed failures in
+      # rebuild-deploy.yml hid a stale token for weeks).
+      - name: Purge Cloudflare cache
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/031c516ab46c1f7718dac0649f584501/purge_cache" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"purge_everything":true}' | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('success'), d.get('errors'); print('purged:', d['result']['id'])"
+
+      - name: Send repair notification
+        if: steps.changes.outputs.changed == 'true'
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message: |
+            🛠️ Blog auto-repair complete
+
+            Fixed ${{ env.REPAIR_COUNT }} post(s) with LLM-leak / truncation issues:
+            ${{ env.REPAIRED_FILES }}
+
+            Rebuilt, deployed to blog.aaruvi.space, and purged cache.
+
+            Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send failure notification
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          LOGS=$(gh run view ${{ github.run_id }} --log-failed 2>&1)
+          FAILED_STEP=$(echo "$LOGS" | grep -m1 '##\[group\]' | sed 's/.*##\[group\]//' || echo "unknown")
+          ERROR_MSG=$(echo "$LOGS" | grep -iE '(Error:|exit code |traceback|Exception|assert)' | head -3)
+          {
+            echo "❌ Blog Repair Failed"
+            echo ""
+            echo "Workflow: ${{ github.workflow }}"
+            echo "Trigger: ${{ github.event_name }}"
+            echo ""
+            echo "Failed step: ${FAILED_STEP}"
+            echo ""
+            echo "Error:"
+            echo "${ERROR_MSG:-No details captured}"
+            echo ""
+            echo "Logs: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          } > /tmp/telegram_msg.txt
+
+      - name: Send failure Telegram
+        if: failure()
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          message_file: /tmp/telegram_msg.txt
