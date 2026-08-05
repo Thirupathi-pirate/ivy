@@ -478,7 +478,7 @@ DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8f
 | Constraint | Detail |
 |-----------|--------|
 | **Blog posts** | ≥2500 words, 8 sections + intro + conclusion, emoji headers, Mermaid, blockquotes, source links |
-| **Bot persona** | Ivy — warm, female, friendly AI assistant |
+| **Bot persona** | Ivy — warm, friendly AI assistant. Identity/tone configurable via `IVY_PERSONA` secret |
 | **Session history** | D1 via `d1SessionAdapter()`, last ~10 messages (system + 9 recent) |
 | **Reminders** | D1-backed, `* * * * *` cron |
 | **Tool loop** | Max 5 turns per message |
