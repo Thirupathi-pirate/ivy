@@ -5,7 +5,7 @@ date: 2026-08-03 01:13:41 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  D.C. is perpetually characterized by a certain level of managed chaos, but as the calendar creeps toward December 11, the tension has shifted from pol
 image:
   path: "https://images.unsplash.com/photo-1618656172765-26774a4a38d2?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxVUyUyMHNlbmF0b3JzJTIwdW52ZWlsfGVufDB8MHx8fDE3ODU3MTk2MjF8MA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "white concrete building under blue sky during daytime"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@sammy"
   unsplash_url: "https://unsplash.com/photos/white-concrete-building-under-blue-sky-during-daytime-hyPt63Df3Dw"
 ---
-
-```yaml
-title: "The December 11 Countdown: Can the Senate Stop a Shutdown?"
-tags: [us-government, federal-budget, senate-politics, economic-impact, cybersecurity, public-policy, government-shutdown, continuing-resolution]
-```
 
 # 🏛️ The December 11 Countdown: Can the Senate Actually Stop a Government Shutdown?
 

@@ -5,7 +5,7 @@ date: 2026-08-04 11:45:35 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For decades, the identity of Washington State was inextricably linked to moisture. To the outside world, it was the "Evergreen State," a sanctuary of 
 image:
   path: "https://images.unsplash.com/photo-1661642110258-8718030fd045?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxXaHklMjBhcmUlMjB0aGV8ZW58MHwwfHx8MTc4NTg0MzkzNXww&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "a young boy holding his hands up"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@supaslim"
   unsplash_url: "https://unsplash.com/photos/a-young-boy-holding-his-hands-up-VI2X0b01p6g"
 ---
-
-```yaml
-title: "The Great Drying: Washington’s Wildfire Crisis Explained"
-tags: [washington-wildfires, spokane-fires, climate-change, forest-management, wui, pacific-northwest, vpd, environmental-crisis]
-```
 
 # 🌲 The New Normal for the Pacific Northwest
 

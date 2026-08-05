@@ -5,7 +5,7 @@ date: 2026-08-04 16:46:41 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  The Schengen Agreement was more than just a diplomatic treaty; it was a bold, high-stakes experiment in institutional trust. The vision was intoxicati
 image:
   path: "https://images.unsplash.com/photo-1543656722-364c5456ac08?ixid=M3w5ODUxMjJ8MHwxfHNlYXJjaHwxfHxJdGFseSUyMHN1c3BlbmRzJTIwZnJlZXxlbnwwfDB8fHwxNzg1ODYyMDAxfDA&ixlib=rb-4.1.0&fm=webp&w=1200&h=630&fit=crop"
   alt: "red auto-rickshaw under arch walkway"
@@ -13,11 +13,6 @@ image:
   photographer_url: "https://unsplash.com/@2renkov"
   unsplash_url: "https://unsplash.com/photos/red-auto-rickshaw-under-arch-walkway-nSp4fnUluLg"
 ---
-
-```yaml
-title: "The Ceuta Domino Effect: Is the Schengen Dream Collapsing?"
-tags: [schengen-area, european-union, migration-crisis, geopolitics, border-security, italy-spain-relations, fortress-europe, eu-law]
-```
 
 # 🇪🇺 The Ceuta Domino Effect: Is the Schengen Dream Collapsing?
 

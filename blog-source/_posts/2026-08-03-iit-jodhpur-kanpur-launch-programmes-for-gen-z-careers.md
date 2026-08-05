@@ -5,13 +5,8 @@ date: 2026-08-03 08:11:40 +0000
 toc: true
 mermaid: true
 description: >-
-  ```yaml
+  For decades, the definition of an "expert" was someone who possessed exhaustive knowledge of a single, narrow domain. In the traditional academic land
 ---
-
-```yaml
-title: "Adaptive Engineering: How IIT Jodhpur & Kanpur Prep Gen Z"
-tags: [iit-jodhpur, iit-kanpur, ai-education, gen-z, interdisciplinary-learning, quantum-computing, industry-4-0, higher-education]
-```
 
 # More Than Just a Degree: The AI and Interdisciplinary Shake-up at IIT Jodhpur and IIT Kanpur
 
