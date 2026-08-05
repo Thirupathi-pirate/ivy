@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter, webhookCallback } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob } from "./ai";
 import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
 // In-memory dedup for webhook update IDs (replaces KV to save quota)
@@ -31,13 +31,25 @@ interface SessionData {
   history: Array<{ role: string; content?: string }>;
   model: string;
   lastUserMessage?: string;
+  activeUrl?: string;
+  activeUrlData?: {
+    ok: boolean;
+    status?: number;
+    title?: string;
+    url: string;
+    text?: string;
+    hash?: string;
+    fetchedAt: number;
+    chars?: number;
+    error?: string;
+  } | null;
 }
 
 type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 10;
 
-function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
+function getSystemPrompt(memories?: string, hasMovies?: boolean, activePage?: SessionData["activeUrlData"]): string {
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
     "You're helpful and friendly, like a good friend who happens to be very knowledgeable. " +
@@ -47,6 +59,18 @@ function getSystemPrompt(memories?: string, hasMovies?: boolean): string {
 
   if (memories) {
     prompt += `\n\n📝 Things I know about this user:\n${memories}`;
+  }
+
+  if (activePage?.ok && activePage.text) {
+    const ago = Math.max(0, Math.round((Date.now() - activePage.fetchedAt) / 60000));
+    prompt +=
+      `\n\n🌐 <Active page> (fetched ${ago} min ago, HTTP ${activePage.status ?? "?"}): ${activePage.title || activePage.url}\n` +
+      `Source: ${activePage.url}\n` +
+      `The user sent this URL and may ask you to review it, summarize it, check if it's live, " +
+      "or check for notifications/changes. Answer from the page content below when relevant. " +
+      "When the user first shares a page, open with a brief overview (what the page is, its main topic) and " +
+      "then ask what they'd like to know — review, live check, changes, or a specific question.\n` +
+      `Page content (${activePage.chars ?? "?"} chars, truncated):\n---\n${activePage.text.slice(0, 12000)}\n---`;
   }
 
   prompt +=
@@ -179,12 +203,15 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     await ctx.reply(
       "Hey! I'm Ivy 💜\n\n" +
         "I'm your friendly AI assistant — I can chat, set reminders, search the web, " +
-        "describe images, transcribe voice, and write blog posts!\n\n" +
+        "describe images, transcribe voice, write blog posts — and read web pages you send me!\n\n" +
+        "• Send me a URL 🔗 and I'll load it — then ask me to review it, check if it's live, or watch for changes\n" +
         "• Chat with me about anything\n" +
         "• Send a photo 📸 and I'll describe it\n" +
         "• Send a voice message 🎤 and I'll transcribe it\n" +
         "• Send a PDF or text document 📄 and I'll read it\n" +
         "• Ask for movie recommendations 🎬\n" +
+        "• \`/weather <city>\` for current conditions\n" +
+        "• \`/watch <url>\` to get notified when a page changes\n" +
         "• \`/write <topic>\` to generate a blog\n" +
         "• \`/models\` to switch AI models\n" +
         "• \`/new\` to reset conversation\n" +
@@ -197,24 +224,33 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.command("help", async (ctx) => {
     await ctx.reply(
       "*Commands:*\n" +
+        "\`/fetch <url>\` — Load a web page (or just send a URL)\n" +
+        "\`/weather <city>\` — Current weather & forecast\n" +
+        "\`/youtube <url>\` — Video transcript\n" +
+        "\`/watch <url> [every 2h]\` — Notify when a page changes\n" +
+        "\`/jobs\` — List reminders / alerts / page watches\n" +
+        "\`/cancel <id>\` — Cancel a job\n" +
+        "\`/page\` — Show loaded page · \`/unload\` — Clear it\n" +
         "\`/write <topic>\` — Generate a blog post\n" +
         "\`/models\` — Switch AI model (inline keyboard)\n" +
         "\`/model <name>\` — Switch model by name\n" +
         "\`/new\` — Reset conversation\n" +
         "\`/redo\` — Re-send last message\n" +
-        "\`/redo <text>\` — Re-send with edited text\n" +
         "\`/system\` — View bot status\n" +
         "\`/clear\` — Reset chat history\n" +
         "\`/help\` — This message\n\n" +
+        "*Web pages:*\n" +
+        "Send me any URL and I'll load it automatically. Then ask me to review it, " +
+        "check if it's live, find notifications, compare changes, or ask anything about it. " +
+        "You can also watch a page and I'll alert you when it changes.\n\n" +
         "*Tips:*\n" +
-        "• Ask for reminders (\"remind me at 14:30 to...\")\n" +
+        "• Ask for reminders (\"remind me every day at 9am IST\")\n" +
         "• Ask me to search the web\n" +
         "• Send a photo 📷 for analysis\n" +
         "• Send a voice note 🎤 for transcription\n" +
         "• Send a PDF or text document 📄 for analysis\n" +
         "• Ask for movie recommendations by genre/mood/title 🎬\n" +
-        "• I remember facts about you across conversations 🧠\n" +
-        "• Reply to my message in groups with @Ivy\n\n" +
+        "• I remember facts about you across conversations 🧠\n\n" +
         "*Models:*\n" +
         FALLBACK_CHAIN_DISPLAY,
       { parse_mode: "Markdown" }
@@ -303,6 +339,152 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     await handleChat(ctx, env, text);
   });
 
+  // ---------- Web / URL Commands (unread-style page handling) ----------
+
+  bot.command("fetch", async (ctx) => {
+    const url = ctx.match?.trim();
+    if (!url) {
+      await ctx.reply("Usage: `/fetch <url>` — load a web page so I can review it, check if it's live, or watch for changes.", { parse_mode: "Markdown" });
+      return;
+    }
+    await ctx.reply("🔍 Loading page…");
+    const loaded = await fetchUrlContent(url);
+    if (!loaded.ok || !loaded.text) {
+      await ctx.reply(`⚠️ Couldn't load that page: ${loaded.error || loaded.status || "unknown error"}`);
+      return;
+    }
+    ctx.session.activeUrl = loaded.url;
+    ctx.session.activeUrlData = {
+      ok: true,
+      status: loaded.status,
+      title: loaded.title,
+      url: loaded.url,
+      text: loaded.text,
+      hash: loaded.hash,
+      fetchedAt: loaded.fetchedAt,
+      chars: loaded.chars,
+    };
+    await ctx.reply(
+      `📄 Loaded <a href="${escapeHtml(loaded.url)}">${escapeHtml(loaded.title || loaded.url)}</a> — HTTP ${loaded.status}, ${loaded.chars} chars.\n\n` +
+        `Now ask me to <b>review it</b>, <b>check if it's live</b>, <b>watch for changes</b>, or ask anything about the page.`,
+      { parse_mode: "HTML", link_preview_options: { is_disabled: false, show_above_text: true } }
+    );
+  });
+
+  bot.command("page", async (ctx) => {
+    const p = ctx.session.activeUrlData;
+    if (!p || !p.ok) {
+      await ctx.reply("No page loaded. Send me a URL or use `/fetch <url>` to load one.", { parse_mode: "Markdown" });
+      return;
+    }
+    const ago = Math.max(0, Math.round((Date.now() - p.fetchedAt) / 60000));
+    await ctx.reply(
+      `📄 <b>Active page</b>\n` +
+        `Title: ${escapeHtml(p.title || "—")}\n` +
+        `URL: <a href="${escapeHtml(p.url)}">${escapeHtml(p.url)}</a>\n` +
+        `HTTP ${p.status ?? "?"} · ${p.chars ?? "?"} chars · fetched ${ago} min ago\n` +
+        `Hash: <code>${escapeHtml(p.hash || "")}</code>`,
+      { parse_mode: "HTML" }
+    );
+  });
+
+  bot.command("unload", async (ctx) => {
+    ctx.session.activeUrl = undefined;
+    ctx.session.activeUrlData = null;
+    await ctx.reply("Active page cleared ✅");
+  });
+
+  bot.command("weather", async (ctx) => {
+    const city = ctx.match?.trim();
+    if (!city) {
+      await ctx.reply("Usage: `/weather <city>` — e.g. /weather Bangalore", { parse_mode: "Markdown" });
+      return;
+    }
+    const w = await getWeather(city);
+    await ctx.reply(w, { parse_mode: "Markdown" });
+  });
+
+  bot.command("youtube", async (ctx) => {
+    const url = ctx.match?.trim();
+    if (!url) {
+      await ctx.reply("Usage: `/youtube <url>` — fetch a video's transcript (paste any YouTube link)", { parse_mode: "Markdown" });
+      return;
+    }
+    await ctx.reply("🎬 Fetching transcript…");
+    const t = await getYoutubeTranscript(url);
+    await ctx.reply(t.length > 3500 ? t.slice(0, 3497) + "\n…[truncated]" : t);
+  });
+
+  bot.command("watch", async (ctx) => {
+    const parts = (ctx.match ?? "").trim().split(/\s+/);
+    const url = parts[0];
+    if (!url) {
+      await ctx.reply("Usage: `/watch <url> [every 2h | every 30m | daily | weekly]` — notify me when the page changes.", { parse_mode: "Markdown" });
+      return;
+    }
+    const freq = parts.slice(1).join(" ").toLowerCase();
+    let schedule: { kind: "cron" | "interval"; expr?: string; minutes?: number; tz: string } | null = null;
+    const every = freq.match(/every\s+(\d+)\s*(m|min|minute|h|hour|d|day)s?/);
+    if (every) {
+      const n = parseInt(every[1], 10);
+      const unit = every[2][0];
+      const minutes = unit === "h" ? n * 60 : unit === "d" ? n * 1440 : n;
+      schedule = { kind: "interval", minutes, tz: "UTC" };
+    } else if (freq.includes("week")) {
+      schedule = buildSchedule("weekly", "09:00", undefined, undefined, undefined, "UTC");
+    } else if (freq.includes("hour")) {
+      schedule = buildSchedule("hourly", undefined, undefined, undefined, undefined, "UTC");
+    } else {
+      schedule = buildSchedule("daily", "09:00", undefined, undefined, undefined, "UTC");
+    }
+    if (!schedule) {
+      await ctx.reply("Couldn't parse that schedule. Examples: `/watch https://example.com every 2h` or `/watch https://example.com daily`", { parse_mode: "Markdown" });
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const job = await createJob(env.IVY_DB, chatId, "pagewatch", schedule, { message: url });
+    if (!job) {
+      await ctx.reply("Failed to create the watch. Try again in a moment.");
+      return;
+    }
+    await ctx.reply(
+      `👀 Watching <code>${escapeHtml(url)}</code>\n` +
+        `I'll fetch the page on schedule and notify you when its content changes. ` +
+        `First check establishes the baseline.\n\nWatch ID: <code>${escapeHtml(job.id)}</code> — cancel with /cancel ${escapeHtml(job.id)}`,
+      { parse_mode: "HTML" }
+    );
+  });
+
+  bot.command("jobs", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const items = await listJobs(env.IVY_DB, String(chatId));
+    if (items.length === 0) {
+      await ctx.reply("No active jobs. Try `/watch <url>` or ask me to set up a reminder or keyword alert.", { parse_mode: "Markdown" });
+      return;
+    }
+    const lines = items.map((j) => {
+      const when = j.next_run ? `<t:${Math.floor(j.next_run / 1000)}:R>` : "—";
+      const what =
+        j.type === "pagewatch" ? `👀 watch ${escapeHtml(j.message || "")}` :
+        j.type === "keyword" ? `🔔 alert "${escapeHtml(j.keyword || "")}"` :
+        `⏰ ${escapeHtml(j.message || "")}`;
+      return `• <code>${escapeHtml(j.id)}</code> ${what} · next ${when}`;
+    });
+    await ctx.reply(`<b>Active jobs:</b>\n\n${lines.join("\n")}\n\nCancel one with /cancel &lt;job_id&gt;`, { parse_mode: "HTML" });
+  });
+
+  bot.command("cancel", async (ctx) => {
+    const id = ctx.match?.trim();
+    if (!id) {
+      await ctx.reply("Usage: `/cancel <job_id>` — see /jobs for your job IDs", { parse_mode: "Markdown" });
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const ok = await cancelJob(env.IVY_DB, chatId, id);
+    await ctx.reply(ok ? `Cancelled job <code>${escapeHtml(id)}</code> ✅` : `No active job with id <code>${escapeHtml(id)}</code>`, { parse_mode: "HTML" });
+  });
+
   // ---------- Callback Queries (Model Switching) ----------
 
   bot.on("callback_query:data", async (ctx) => {
@@ -361,6 +543,37 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       return;
     }
     if (text.startsWith("/")) return;
+
+    // --- Auto-load URLs: send a link → Ivy fetches it and keeps it as the
+    // "active page" so follow-ups ("review it", "is it live?", "any changes?")
+    // are answered from the page content (unread-style flow). ---
+    const urlMatch = text.match(/(https?:\/\/[^\s<>()]+)/i);
+    if (urlMatch && !/youtube\.com|youtu\.be/i.test(urlMatch[1])) {
+      const url = urlMatch[1].replace(/[),.;:!?"]+$/, "");
+      const cached = ctx.session.activeUrlData && ctx.session.activeUrl === url && Date.now() - ctx.session.activeUrlData.fetchedAt < 5 * 60 * 1000;
+      if (!cached) {
+        await ctx.reply("🔍 Loading page…");
+        const loaded = await fetchUrlContent(url);
+        if (loaded.ok && loaded.text) {
+          ctx.session.activeUrl = loaded.url;
+          ctx.session.activeUrlData = {
+            ok: true,
+            status: loaded.status,
+            title: loaded.title,
+            url: loaded.url,
+            text: loaded.text,
+            hash: loaded.hash,
+            fetchedAt: loaded.fetchedAt,
+            chars: loaded.chars,
+          };
+        } else {
+          ctx.session.activeUrl = url;
+          ctx.session.activeUrlData = { ok: false, status: loaded.status, url, fetchedAt: loaded.fetchedAt, error: loaded.error };
+          await ctx.reply(`⚠️ Couldn't load that page: ${loaded.error || loaded.status || "unknown error"}`);
+          return;
+        }
+      }
+    }
 
     if (!env.GROQ_API_KEY && !env.GEMINI_API_KEY) {
       await ctx.reply("AI chat is not configured (set GEMINI_API_KEY or GROQ_API_KEY).");
@@ -589,7 +802,7 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   // Load user memories and refresh system prompt
   const memories = await loadUserMemories(env.IVY_DB, chatIdStr);
   const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-  const sysPrompt = getSystemPrompt(memories, hasMovies);
+  const sysPrompt = getSystemPrompt(memories, hasMovies, ctx.session.activeUrlData);
   const sysIdx = history.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     history[sysIdx].content = sysPrompt;
@@ -1119,6 +1332,14 @@ app.all("*", async (c) => {
       const cmdList = [
         { command: "start", description: "Start the bot" },
         { command: "help", description: "Show help and available commands" },
+        { command: "fetch", description: "Load a web page for review (or just send a URL)" },
+        { command: "weather", description: "Get weather for a city, e.g. /weather Bangalore" },
+        { command: "youtube", description: "Fetch a YouTube video transcript" },
+        { command: "watch", description: "Watch a page and get notified when it changes" },
+        { command: "jobs", description: "List active reminders / alerts / page watches" },
+        { command: "cancel", description: "Cancel a job by ID" },
+        { command: "page", description: "Show the currently loaded page" },
+        { command: "unload", description: "Clear the loaded page" },
         { command: "write", description: "Write a blog post about a topic" },
         { command: "model", description: "Switch AI model by name" },
         { command: "models", description: "Select AI model from a menu" },

@@ -84,15 +84,125 @@ async function memoryRecall(db: D1Database, chatId: string, key?: string): Promi
 
 // ===================== URL Fetch =====================
 
-async function fetchUrl(url: string): Promise<string> {
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) return `HTTP ${resp.status}: ${resp.statusText}`;
-    const text = await resp.text();
-    return text.slice(0, 8000) + (text.length > 8000 ? "\n\n[truncated]" : "");
-  } catch (e: any) {
-    return `Error fetching URL: ${e.message}`;
+export interface UrlFetchResult {
+  ok: boolean;
+  status?: number;
+  title?: string;
+  url: string;
+  text?: string;
+  hash?: string;
+  fetchedAt: number;
+  chars?: number;
+  error?: string;
+}
+
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+/** Decode HTML entities (&amp; &#39; &#x27; &nbsp; …) */
+function decodeEntities(s: string): string {
+  const named: Record<string, string> = {
+    amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", hellip: "…", mdash: "—", ndash: "–",
+    lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D", copy: "©", reg: "®", trade: "™",
+    middot: "·", bull: "•", deg: "°", times: "×", divide: "÷", plusmn: "±", para: "¶", sect: "§",
+  };
+  return s
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&([a-z]+);/gi, (m, name: string) => named[name.toLowerCase()] ?? m);
+}
+
+/** FNV-1a 32-bit hash → stable content fingerprint for change detection */
+function contentHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
   }
+  return (h >>> 0).toString(16);
+}
+
+/** Strip script/style/nav cruft from raw HTML, keep headings + lists, return clean text */
+function htmlToText(raw: string): { title?: string; text: string } {
+  const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  let title = titleMatch ? decodeEntities(titleMatch[1].replace(/<[^>]+>/g, "").trim()).slice(0, 200) : undefined;
+
+  let html = raw
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|noscript|svg|template|iframe|head)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(script|style|noscript|svg|template|iframe|head)[^>]*\/>/gi, "");
+
+  // Turn block boundaries into newlines before stripping tags
+  html = html.replace(/<\/(p|div|h[1-6]|li|tr|section|article|blockquote|pre|table|ul|ol)>/gi, "\n");
+
+  let text = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[\u00a0\u200b]+/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  text = decodeEntities(text);
+  if (!title) {
+    const firstLine = text.split("\n").find((l) => l.trim().length > 8);
+    title = firstLine?.trim().slice(0, 200);
+  }
+  return { title, text };
+}
+
+const MAX_HTML_BYTES = 5_000_000; // unread-style hard cap on raw HTML
+
+/**
+ * Fetch a URL and extract readable content (title + clean text + fingerprint).
+ * Unread-style: browser UA, size cap, HTML→text extraction with nav cruft removed.
+ */
+export async function fetchUrlContent(rawUrl: string): Promise<UrlFetchResult> {
+  const fetchedAt = Date.now();
+  let url = rawUrl.trim();
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  try {
+    const resp = await fetch(url, {
+      headers: { "User-Agent": BROWSER_UA, "Accept-Language": "en" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(20000),
+    });
+    const finalUrl = resp.url || url;
+    if (!resp.ok) return { ok: false, status: resp.status, url: finalUrl, fetchedAt, error: `HTTP ${resp.status}` };
+
+    const contentType = (resp.headers.get("content-type") || "").toLowerCase();
+    if (contentType && !contentType.startsWith("text/") && !contentType.includes("html") && !contentType.includes("json") && !contentType.includes("xml")) {
+      return { ok: false, status: resp.status, url: finalUrl, fetchedAt, error: `Not a web page (${contentType.split(";")[0] || "unknown type"})` };
+    }
+
+    const text = await resp.text();
+    if (text.length > MAX_HTML_BYTES) {
+      return { ok: false, status: resp.status, url: finalUrl, fetchedAt, error: "Page is too large (>5 MB)" };
+    }
+
+    const isHtml = contentType.includes("html") || /<html[\s>]/i.test(text.slice(0, 2000));
+    if (isHtml) {
+      const { title, text: clean } = htmlToText(text);
+      if (!clean) {
+        return { ok: false, status: resp.status, url: finalUrl, fetchedAt, error: "Appears to be a JavaScript-rendered page — no readable text" };
+      }
+      return { ok: true, status: resp.status, title, url: finalUrl, text: clean, hash: contentHash(clean), fetchedAt, chars: clean.length };
+    }
+
+    // Plain text / JSON / XML
+    const clean = text.replace(/\r\n/g, "\n").slice(0, 30000);
+    return { ok: true, status: resp.status, title: url, url: finalUrl, text: clean, hash: contentHash(clean), fetchedAt, chars: clean.length };
+  } catch (e: any) {
+    return { ok: false, url, fetchedAt, error: e?.name === "TimeoutError" ? "Request timed out" : e?.message || "Fetch failed" };
+  }
+}
+
+/** Tool-facing string form (kept for the fetch_url tool) */
+async function fetchUrl(url: string): Promise<string> {
+  const r = await fetchUrlContent(url);
+  if (!r.ok) return `Error fetching URL: ${r.error}`;
+  const head = `📄 ${r.title || ""} (HTTP ${r.status}, ${r.chars} chars)\nSource: ${r.url}\n\n`;
+  return head + (r.text || "").slice(0, 15000) + ((r.text?.length || 0) > 15000 ? "\n\n[truncated]" : "");
 }
 
 // ===================== Time =====================
@@ -349,7 +459,7 @@ export function computeJobNextRun(scheduleJson: string, fromMs: number): number 
   return fromMs + 24 * 3600 * 1000;
 }
 
-async function createJob(
+export async function createJob(
   db: D1Database,
   chatId: string,
   type: string,
@@ -367,7 +477,7 @@ async function createJob(
   return { id, next_run };
 }
 
-async function listJobs(db: D1Database, chatId: string): Promise<JobRow[]> {
+export async function listJobs(db: D1Database, chatId: string): Promise<JobRow[]> {
   const results = await db
     .prepare("SELECT id, type, schedule, message, keyword, next_run, enabled FROM jobs WHERE chat_id = ? AND enabled = 1 ORDER BY next_run ASC")
     .bind(chatId)
@@ -375,7 +485,7 @@ async function listJobs(db: D1Database, chatId: string): Promise<JobRow[]> {
   return results.results || [];
 }
 
-async function cancelJob(db: D1Database, chatId: string, jobId: string): Promise<boolean> {
+export async function cancelJob(db: D1Database, chatId: string, jobId: string): Promise<boolean> {
   const result = await db.prepare("DELETE FROM jobs WHERE id = ? AND chat_id = ?").bind(jobId, chatId).run();
   return (result.meta.changes ?? 0) > 0;
 }
@@ -428,6 +538,63 @@ export async function runScheduledJob(env: Env, job: JobRow): Promise<void> {
     await env.IVY_DB.prepare("UPDATE jobs SET last_result = ? WHERE id = ?").bind(JSON.stringify({ urls }), job.id).run();
     return;
   }
+  if (job.type === "pagewatch") {
+    // unread-watch style: fetch the URL, fingerprint the content, alert on change
+    const url = job.message || job.keyword || "";
+    if (!url) throw new Error("pagewatch job missing url");
+    const res = await fetchUrlContent(url);
+    if (!res.ok || !res.text || !res.hash) {
+      console.warn(`[JOB] pagewatch ${job.id}: fetch failed (${res.error || res.status})`);
+      await env.IVY_DB.prepare("UPDATE jobs SET last_result = ? WHERE id = ?")
+        .bind(JSON.stringify({ url, ok: false, status: res.status, error: res.error, fetchedAt: res.fetchedAt }), job.id)
+        .run();
+      return;
+    }
+    let prev: { hash?: string } = {};
+    try {
+      prev = JSON.parse(job.last_result || "{}");
+    } catch {}
+    await env.IVY_DB.prepare("UPDATE jobs SET last_result = ? WHERE id = ?")
+      .bind(JSON.stringify({ url, ok: true, status: res.status, hash: res.hash, fetchedAt: res.fetchedAt, chars: res.chars }), job.id)
+      .run();
+    const label = res.title || url;
+    if (!prev.hash) {
+      // First run — establish baseline and confirm the watch is active
+      const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: job.chat_id,
+          text: `👀 Watching <a href="${escapeHtml(url)}">${escapeHtml(label)}</a> (${res.chars} chars) — I'll notify you when the page changes.`,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: false, show_above_text: true },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Telegram send failed: ${resp.status}`);
+      console.log(`[JOB] pagewatch ${job.id}: baseline set for ${url}`);
+      return;
+    }
+    if (prev.hash !== res.hash) {
+      const snippet = (res.text || "").slice(0, 900).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
+      const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: job.chat_id,
+          text:
+            `🔔 <b>Page changed:</b> <a href="${escapeHtml(url)}">${escapeHtml(label)}</a>\n\n` +
+            `<i>Preview:</i>\n${escapeHtml(snippet)}…`,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: false, show_above_text: true },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Telegram send failed: ${resp.status}`);
+      console.log(`[JOB] pagewatch ${job.id}: change detected on ${url}`);
+    } else {
+      console.log(`[JOB] pagewatch ${job.id}: no change (hash ${res.hash})`);
+    }
+    return;
+  }
   throw new Error(`Unknown job type: ${job.type}`);
 }
 
@@ -457,7 +624,7 @@ const CITY_ALIASES: Record<string, string> = {
   delhi: "New Delhi",
 };
 
-async function getWeather(city: string): Promise<string> {
+export async function getWeather(city: string): Promise<string> {
   try {
     const key = city.trim().toLowerCase().replace(/\s+/g, "");
     const searchName = CITY_ALIASES[key] ?? city.trim();
@@ -535,7 +702,7 @@ async function fetchYouTubePlayerResponse(videoId: string): Promise<any | null> 
   return null;
 }
 
-async function getYoutubeTranscript(url: string): Promise<string> {
+export async function getYoutubeTranscript(url: string): Promise<string> {
   const videoId = extractYouTubeId(url);
   if (!videoId) return "Could not extract a YouTube video ID from that URL.";
   const player = await fetchYouTubePlayerResponse(videoId);
@@ -1165,6 +1332,39 @@ function getTools(env: Env) {
         },
       },
     },
+    {
+      type: "function",
+      function: {
+        name: "check_url",
+        description: "Quickly check whether a URL is live/reachable and get its HTTP status and page title. Use when the user asks 'is this page live', 'is the site down/up', or 'did the page load'.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The URL to check" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "watch_page",
+        description: "Watch a web page and notify the user whenever its content changes. Use when the user says 'watch this page', 'notify me when this page changes', 'check this page for updates', 'track this page', or wants to monitor a URL for changes/notifications.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The URL of the page to watch" },
+            label: { type: "string", description: "Optional friendly label for the watch" },
+            frequency: { type: "string", enum: ["hourly", "daily", "weekly", "custom"], description: "How often to check (default daily)" },
+            time: { type: "string", description: "Time of day HH:MM for daily/weekly checks" },
+            cron_expr: { type: "string", description: "5-field cron expression for frequency=custom" },
+            timezone: { type: "string", description: "Optional IANA timezone (default UTC)" },
+          },
+          required: ["url"],
+        },
+      },
+    },
   ];
   if (env.TAVILY_API_KEY) {
     tools.push({
@@ -1305,6 +1505,34 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
     case "cancel_job": {
       const ok = await cancelJob(env.IVY_DB, chatId, args.job_id);
       return JSON.stringify({ status: ok ? "cancelled" : "not_found" });
+    }
+    case "check_url": {
+      const r = await fetchUrlContent(args.url);
+      if (!r.ok) return JSON.stringify({ status: "down", error: r.error, url: r.url, checked_at: r.fetchedAt });
+      return JSON.stringify({
+        status: "live",
+        http: r.status,
+        title: r.title || null,
+        chars: r.chars || 0,
+        hash: r.hash,
+        url: r.url,
+        checked_at: r.fetchedAt,
+      });
+    }
+    case "watch_page": {
+      const schedule = buildSchedule(args.frequency || "daily", args.time, undefined, undefined, args.cron_expr, args.timezone);
+      if (!schedule) return JSON.stringify({ status: "error", message: "Could not parse that schedule." });
+      const job = await createJob(env.IVY_DB, chatId, "pagewatch", schedule, { message: args.url, keyword: args.label });
+      if (!job) return JSON.stringify({ status: "error" });
+      return JSON.stringify({
+        status: "created",
+        id: job.id,
+        type: "page watch",
+        url: args.url,
+        schedule: schedule,
+        next_run: job.next_run,
+        display: `<t:${Math.floor(job.next_run / 1000)}:f>`,
+      });
     }
     case "list_reminders": {
       const items = await listReminders(env.IVY_DB, chatId);
@@ -1723,6 +1951,8 @@ const TOOL_KEYWORDS = [
   "every day", "every week", "every monday", "every tuesday", "every wednesday", "every thursday", "every friday", "every saturday", "every sunday",
   "every hour", "every 2 hours", "daily", "weekly", "weekdays", "weekends",
   "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
+  "page", "website", "web page", "is it live", "is the site", "site down", "site up", "live check", "url",
+  "watch this page", "watch the page", "track this page", "track the page", "page change", "page changed", "any changes", "check the page",
 ];
 
 function needsTools(messages: ChatMessage[]): boolean {

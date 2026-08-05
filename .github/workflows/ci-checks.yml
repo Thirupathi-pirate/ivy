@@ -22,20 +22,10 @@ jobs:
       - name: Validate YAML syntax
         run: |
           pip install pyyaml -q
-          find . -name '*.yml' -o -name '*.yaml' | xargs -r python3 -c "
-import sys, yaml
-exit_code = 0
-for line in sys.stdin:
-    path = line.strip()
-    try:
-        with open(path) as f:
-            yaml.safe_load(f)
-        print(f'  ✓ {path}')
-    except yaml.YAMLError as e:
-        print(f'  ✗ {path}: {e}')
-        exit_code = 1
-sys.exit(exit_code)
-"
+          for f in *.yml *.yaml; do
+            [ -e "$f" ] || continue
+            python3 -c "import sys, yaml; yaml.safe_load(open('$f')); print('  OK $f')" || { echo "  FAIL $f"; exit 1; }
+          done
         working-directory: .github/workflows
 
       - name: Install uv
