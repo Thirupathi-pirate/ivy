@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter, webhookCallback } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge } from "./ai";
 import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
 // In-memory dedup for webhook update IDs (replaces KV to save quota)
@@ -43,19 +43,55 @@ interface SessionData {
     chars?: number;
     error?: string;
   } | null;
+  /** User-configurable personality traits (tone/language/behavior). */
+  personality?: { formality?: string; humor?: string; empathy?: string };
 }
 
 type MyContext = Context & { session: SessionData };
 
 const MAX_HISTORY = 10;
 
-function getSystemPrompt(memories?: string, hasMovies?: boolean, activePage?: SessionData["activeUrlData"]): string {
+function getSystemPrompt(opts: {
+  memories?: string;
+  hasMovies?: boolean;
+  activePage?: SessionData["activeUrlData"];
+  personality?: SessionData["personality"];
+  knowledge?: string;
+  emotion?: { emotion: string; intensity: number; cues?: string[] };
+}): string {
+  const { memories, hasMovies, activePage, personality, knowledge, emotion } = opts;
   let prompt =
     "You are Ivy, a warm, friendly, and intelligent woman who helps with planning, reminders, and light research. " +
     "You're helpful and friendly, like a good friend who happens to be very knowledgeable. " +
     "Use memory_save to remember things the user tells you about themselves and memory_recall to retrieve them. " +
     "You have persistent memory across conversations — anything saved via memory_save is loaded automatically next time we talk. " +
     `Current UTC time is: ${new Date().toISOString()}`;
+
+  if (personality && (personality.formality || personality.humor || personality.empathy)) {
+    const f = personality.formality || "balanced";
+    const h = personality.humor || "subtle";
+    const e = personality.empathy || "warm";
+    prompt +=
+      `\n\n🎭 <Personality settings> (user-configured — follow them):\n` +
+      `- Formality: ${f} (casual = relaxed chat, balanced = natural, professional = polished)\n` +
+      `- Humor: ${h} (off/subtle/witty/playful — match the requested level)\n` +
+      `- Empathy: ${e} (practical = solution-first, warm = friendly support, comforting = extra gentle)\n` +
+      `Adjust your tone, word choice, and emotional warmth accordingly.`;
+  }
+
+  if (knowledge) {
+    prompt +=
+      `\n\n🧠 <Knowledge graph> (structured facts about the user's world — keep them in mind when relevant):\n${knowledge}\n` +
+      `When the user mentions new people, preferences, or relationships, save them with kg_add_fact. ` +
+      `Answer questions like "what do you know about X?" by querying with kg_query.`;
+  }
+
+  if (emotion && emotion.emotion !== "neutral") {
+    prompt +=
+      `\n\n💛 <Emotional context>: The user appears to be feeling ${emotion.emotion}${emotion.intensity > 0.6 ? " (strongly)" : ""}. ` +
+      `Respond with genuine empathy — acknowledge how they feel first, be warm and supportive rather than clinical, ` +
+      `keep the tone calm, and offer concrete practical help. Never dismiss or downplay their feelings.`;
+  }
 
   if (memories) {
     prompt += `\n\n📝 Things I know about this user:\n${memories}`;
@@ -231,6 +267,8 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "\`/jobs\` — List reminders / alerts / page watches\n" +
         "\`/cancel <id>\` — Cancel a job\n" +
         "\`/page\` — Show loaded page · \`/unload\` — Clear it\n" +
+        "\`/personality\` — Customize my tone (formality / humor / empathy)\n" +
+        "\`/knowledge\` — View my knowledge graph about a subject\n" +
         "\`/write <topic>\` — Generate a blog post\n" +
         "\`/models\` — Switch AI model (inline keyboard)\n" +
         "\`/model <name>\` — Switch model by name\n" +
@@ -250,7 +288,9 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "• Send a voice note 🎤 for transcription\n" +
         "• Send a PDF or text document 📄 for analysis\n" +
         "• Ask for movie recommendations by genre/mood/title 🎬\n" +
-        "• I remember facts about you across conversations 🧠\n\n" +
+        "• I remember facts about you across conversations 🧠\n" +
+        "• \`/personality\` to customize my tone\n" +
+        "• \`/knowledge\` to see what I know about a subject\n\n" +
         "*Models:*\n" +
         FALLBACK_CHAIN_DISPLAY,
       { parse_mode: "Markdown" }
@@ -485,6 +525,73 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     await ctx.reply(ok ? `Cancelled job <code>${escapeHtml(id)}</code> ✅` : `No active job with id <code>${escapeHtml(id)}</code>`, { parse_mode: "HTML" });
   });
 
+  // ---------- Personality Traits (customize Ivy's tone) ----------
+
+  const PERSONALITY_TRAITS: Record<string, string[]> = {
+    formality: ["casual", "balanced", "professional"],
+    humor: ["off", "subtle", "witty", "playful"],
+    empathy: ["practical", "warm", "comforting"],
+  };
+
+  bot.command("personality", async (ctx) => {
+    const args = (ctx.match ?? "").trim().split(/\s+/).filter(Boolean);
+    if (args.length === 0) {
+      const p = ctx.session.personality || {};
+      const lines = Object.entries(PERSONALITY_TRAITS).map(([trait, levels]) => {
+        const cur = p[trait as keyof typeof p] || "default";
+        return `• ${trait}: \`${cur}\` — options: ${levels.map((l) => `\`${l}\``).join(" / ")}`;
+      });
+      await ctx.reply(
+        "*Personality settings*\n" + lines.join("\n") + "\n\nSet one: `/personality <trait> <level>`\nReset all: `/personality reset`",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+    if (args[0] === "reset") {
+      ctx.session.personality = {};
+      await ctx.reply("Personality settings reset to defaults ✅");
+      return;
+    }
+    const trait = args[0];
+    const level = args[1];
+    const levels = PERSONALITY_TRAITS[trait];
+    if (!levels) {
+      await ctx.reply("Unknown trait. Options: " + Object.keys(PERSONALITY_TRAITS).join(", "));
+      return;
+    }
+    if (!level || !levels.includes(level)) {
+      await ctx.reply(`Invalid level for ${trait}. Options: ${levels.join(", ")}`);
+      return;
+    }
+    ctx.session.personality = { ...(ctx.session.personality || {}), [trait]: level };
+    await ctx.reply(`Personality updated: ${trait} = \`${level}\` ✅`, { parse_mode: "Markdown" });
+  });
+
+  // ---------- Knowledge Graph ----------
+
+  bot.command("knowledge", async (ctx) => {
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    const subject = ctx.match?.trim();
+    const out = await kgQuery(env.IVY_DB, String(chatId), subject || undefined);
+    const heading = subject ? `*Knowledge graph — ${subject}:*` : "*Knowledge graph (recent facts):*";
+    await ctx.reply(
+      heading + "\n" + out + "\n\n_Facts are added automatically when you share preferences or relationships. Ask me \"what do you know about X?\"_",
+      { parse_mode: "Markdown" }
+    );
+  });
+
+  bot.command("forgetkg", async (ctx) => {
+    const subject = ctx.match?.trim();
+    if (!subject) {
+      await ctx.reply("Usage: `/forgetkg <subject>` — remove knowledge graph facts about a subject", { parse_mode: "Markdown" });
+      return;
+    }
+    const chatId = String(ctx.chat?.id ?? "");
+    const out = await kgForget(env.IVY_DB, chatId, subject);
+    await ctx.reply(out);
+  });
+
   // ---------- Callback Queries (Model Switching) ----------
 
   bot.on("callback_query:data", async (ctx) => {
@@ -616,7 +723,12 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       const chatIdForMem = ctx.chat.id;
       const photoMemories = await loadUserMemories(env.IVY_DB, String(chatIdForMem));
       const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt(photoMemories, hasMovies) +
+      const sysPrompt = getSystemPrompt({
+        memories: photoMemories,
+        hasMovies,
+        personality: ctx.session.personality,
+        knowledge: await loadKnowledge(env.IVY_DB, String(chatIdForMem)),
+      }) +
         "\n\n📸 When shown an image, describe it in rich detail — objects, colors, composition, mood, and any text visible.";
       const sysIdx = history.findIndex((m) => m.role === "system");
       if (sysIdx >= 0) {
@@ -799,10 +911,19 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
 
   const history = ctx.session.history;
 
-  // Load user memories and refresh system prompt
+  // Load user memories, knowledge graph, emotion cues, and refresh system prompt
   const memories = await loadUserMemories(env.IVY_DB, chatIdStr);
+  const knowledge = await loadKnowledge(env.IVY_DB, chatIdStr);
+  const emotion = detectEmotion(text);
   const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-  const sysPrompt = getSystemPrompt(memories, hasMovies, ctx.session.activeUrlData);
+  const sysPrompt = getSystemPrompt({
+    memories,
+    hasMovies,
+    activePage: ctx.session.activeUrlData,
+    personality: ctx.session.personality,
+    knowledge,
+    emotion,
+  });
   const sysIdx = history.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     history[sysIdx].content = sysPrompt;
@@ -1004,7 +1125,7 @@ async function handleDiscordCommand(env: Env, interaction: any, token: string) {
       const text = interaction.data.options?.find((o: any) => o.name === "message")?.value || "";
       const memories = await loadUserMemories(env.IVY_DB, sessionKey);
       const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt(memories, hasMovies);
+      const sysPrompt = getSystemPrompt({ memories, hasMovies });
 
       const row = await env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
       const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
@@ -1176,7 +1297,7 @@ app.post("/chat-message", async (c) => {
 
       const memories = await loadUserMemories(c.env.IVY_DB, sessionKey);
       const hasMovies = !!(c.env.TMDB_API_KEY || (c.env.REDDIT_CLIENT_ID && c.env.REDDIT_CLIENT_SECRET) || c.env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt(memories, hasMovies);
+      const sysPrompt = getSystemPrompt({ memories, hasMovies });
 
       const row = await c.env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
       const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
@@ -1225,6 +1346,8 @@ app.get("/init", async (c) => {
     "CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, type TEXT NOT NULL, schedule TEXT NOT NULL, message TEXT, keyword TEXT, next_run INTEGER NOT NULL, last_run INTEGER, last_result TEXT, enabled INTEGER NOT NULL DEFAULT 1)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_next_run ON jobs(next_run)",
     "CREATE INDEX IF NOT EXISTS idx_jobs_chat ON jobs(chat_id)",
+    "CREATE TABLE IF NOT EXISTS knowledge (chat_id TEXT NOT NULL, subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, source TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (chat_id, subject, predicate, object))",
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_subject ON knowledge(chat_id, subject)",
   ];
   try {
     for (const stmt of statements) {
@@ -1311,6 +1434,15 @@ app.post("/debug/jobs-clean", async (c) => {
   return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
 });
 
+// POST /debug/kg — list knowledge graph rows (verifies D1 writes) [admin]
+app.post("/debug/kg", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const res = await c.env.IVY_DB.prepare("SELECT chat_id, subject, predicate, object, source, updated_at FROM knowledge ORDER BY updated_at DESC LIMIT 20").all();
+  return c.json({ ok: true, count: res.results?.length || 0, rows: res.results || [] });
+});
+
 app.all("*", async (c) => {
   if (c.req.method === "GET") {
     const command = c.req.query("command");
@@ -1340,6 +1472,9 @@ app.all("*", async (c) => {
         { command: "cancel", description: "Cancel a job by ID" },
         { command: "page", description: "Show the currently loaded page" },
         { command: "unload", description: "Clear the loaded page" },
+        { command: "personality", description: "Customize my tone (formality / humor / empathy)" },
+        { command: "knowledge", description: "Show my knowledge graph about a subject" },
+        { command: "forgetkg", description: "Remove knowledge graph facts about a subject" },
         { command: "write", description: "Write a blog post about a topic" },
         { command: "model", description: "Switch AI model by name" },
         { command: "models", description: "Select AI model from a menu" },

@@ -82,6 +82,116 @@ async function memoryRecall(db: D1Database, chatId: string, key?: string): Promi
   return results.results.map((m) => `• ${m.key}: ${m.value}`).join("\n");
 }
 
+// ===================== Emotional Intelligence =====================
+// Lightweight heuristic: detects emotional cues so the bot can respond with
+// genuine empathy (the LLM does the actual empathetic writing — this just
+// nudges the system prompt when the user is clearly upset/happy/etc).
+
+const EMOTION_CUES: Record<string, { words: string[]; emojis: string[]; weight: number }> = {
+  sad: {
+    words: ["sad", "depressed", "depressing", "lonely", "crying", "cry", "heartbroken", "hopeless", "miserable", "upset", "down", "grief", "grieving", "hurt", "in tears", "lost someone", "broke up", "failed"],
+    emojis: ["😢", "😭", "💔", "🥺"],
+    weight: 2,
+  },
+  anxious: {
+    words: ["anxious", "worried", "worry", "stressed", "stress", "scared", "nervous", "panic", "panicking", "overwhelmed", "afraid", "fear", "uneasy", "can't sleep", "cant sleep", "on edge", "dreading"],
+    emojis: ["😰", "😟", "😬"],
+    weight: 2,
+  },
+  angry: {
+    words: ["angry", "furious", "hate", "frustrated", "annoyed", "pissed", "irritated", "unfair", "fed up", "sick of", "rage", "fuming"],
+    emojis: ["😡", "🤬", "😤"],
+    weight: 2,
+  },
+  happy: {
+    words: ["happy", "excited", "amazing", "awesome", "great news", "thrilled", "delighted", "love it", "fantastic", "yay", "celebrate", "passed", "got the job", "promoted", "engaged"],
+    emojis: ["😄", "🎉", "🥳", "😁"],
+    weight: 1.5,
+  },
+  grateful: {
+    words: ["thank you", "thanks so much", "grateful", "appreciate", "thankful", "means a lot"],
+    emojis: ["🙏"],
+    weight: 1.5,
+  },
+};
+
+export function detectEmotion(text: string): { emotion: string; intensity: number; cues: string[] } {
+  const lower = text.toLowerCase();
+  const scores = new Map<string, { score: number; cues: string[] }>();
+  for (const [emotion, cfg] of Object.entries(EMOTION_CUES)) {
+    let score = 0;
+    const cues: string[] = [];
+    for (const w of cfg.words) {
+      if (lower.includes(w)) {
+        score += cfg.weight;
+        cues.push(w);
+      }
+    }
+    for (const e of cfg.emojis) {
+      if (text.includes(e)) {
+        score += 2;
+        cues.push(e);
+      }
+    }
+    if (score > 0) scores.set(emotion, { score, cues });
+  }
+  if (scores.size === 0) return { emotion: "neutral", intensity: 0, cues: [] };
+  const best = [...scores.entries()].sort((a, b) => b[1].score - a[1].score)[0];
+  return { emotion: best[0], intensity: Math.min(1, best[1].score / 5), cues: best[1].cues.slice(0, 4) };
+}
+
+// ===================== Knowledge Graph =====================
+// Structured triple store (subject → predicate → object) per chat. Grows as
+// the user shares facts, preferences, and relationships; injected into the
+// system prompt so answers stay accurate and relevant across conversations.
+
+export async function kgAddFact(db: D1Database, chatId: string, subject: string, predicate: string, object: string, source?: string): Promise<string> {
+  const s = subject.trim();
+  const p = predicate.trim();
+  const o = object.trim();
+  if (!s || !p || !o) return "Error: subject, predicate and object are all required.";
+  await db
+    .prepare(
+      "INSERT INTO knowledge (chat_id, subject, predicate, object, source, updated_at) VALUES (?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(chat_id, subject, predicate, object) DO UPDATE SET source = excluded.source, updated_at = excluded.updated_at"
+    )
+    .bind(chatId, s, p, o, source ?? null, Date.now())
+    .run();
+  return `Saved to knowledge graph: ${s} → ${p} → ${o}`;
+}
+
+export async function kgQuery(db: D1Database, chatId: string, subject?: string, limit = 30): Promise<string> {
+  let rows;
+  if (subject && subject.trim()) {
+    rows = await db
+      .prepare("SELECT subject, predicate, object FROM knowledge WHERE chat_id = ? AND subject LIKE ? ORDER BY updated_at DESC LIMIT ?")
+      .bind(chatId, `%${subject.trim()}%`, limit)
+      .all<{ subject: string; predicate: string; object: string }>();
+  } else {
+    rows = await db
+      .prepare("SELECT subject, predicate, object FROM knowledge WHERE chat_id = ? ORDER BY updated_at DESC LIMIT ?")
+      .bind(chatId, limit)
+      .all<{ subject: string; predicate: string; object: string }>();
+  }
+  if (!rows.results?.length) return subject ? `No knowledge graph facts found for "${subject}".` : "No facts in your knowledge graph yet.";
+  return rows.results.map((r) => `• ${r.subject} → ${r.predicate} → ${r.object}`).join("\n");
+}
+
+export async function kgForget(db: D1Database, chatId: string, subject: string): Promise<string> {
+  const res = await db.prepare("DELETE FROM knowledge WHERE chat_id = ? AND subject LIKE ?").bind(chatId, `%${subject.trim()}%`).run();
+  return (res.meta.changes ?? 0) > 0 ? `Removed ${res.meta.changes} fact(s) about "${subject.trim()}".` : `No facts found about "${subject.trim()}".`;
+}
+
+/** Recent knowledge triples, one per line — for injection into the system prompt. */
+export async function loadKnowledge(db: D1Database, chatId: string, limit = 15): Promise<string> {
+  const rows = await db
+    .prepare("SELECT subject, predicate, object FROM knowledge WHERE chat_id = ? ORDER BY updated_at DESC LIMIT ?")
+    .bind(chatId, limit)
+    .all<{ subject: string; predicate: string; object: string }>();
+  if (!rows.results?.length) return "";
+  return rows.results.map((r) => `${r.subject} → ${r.predicate} → ${r.object}`).join("\n");
+}
+
 // ===================== URL Fetch =====================
 
 export interface UrlFetchResult {
@@ -1220,6 +1330,35 @@ function getTools(env: Env) {
     {
       type: "function",
       function: {
+        name: "kg_add_fact",
+        description: "Save a structured fact (subject → predicate → object) to the knowledge graph. Use for relationships, preferences, and evolving knowledge the user may ask about later — e.g. subject='Alex', predicate='favorite director', object='Christopher Nolan'. Use memory_save for simple one-off facts instead.",
+        parameters: {
+          type: "object",
+          properties: {
+            subject: { type: "string", description: "The thing the fact is about (person, topic, project, etc.)" },
+            predicate: { type: "string", description: "The relationship or attribute, e.g. 'lives in', 'works on', 'favorite'" },
+            object: { type: "string", description: "The value, e.g. 'Bangalore', 'a robotics startup', 'Christopher Nolan'" },
+          },
+          required: ["subject", "predicate", "object"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "kg_query",
+        description: "Query the knowledge graph for structured facts about a subject (person, topic, project, etc.). Use when the user asks what you know about someone or something.",
+        parameters: {
+          type: "object",
+          properties: {
+            subject: { type: "string", description: "Subject to look up. Omit to list the most recent facts." },
+          },
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "fetch_url",
         description: "Fetch the content of a URL. Use this to read web pages, articles, docs, or API responses.",
         parameters: {
@@ -1555,6 +1694,10 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
       return await memorySave(env.IVY_DB, chatId, args.key, args.value);
     case "memory_recall":
       return await memoryRecall(env.IVY_DB, chatId, args.key);
+    case "kg_add_fact":
+      return await kgAddFact(env.IVY_DB, chatId, args.subject, args.predicate, args.object);
+    case "kg_query":
+      return await kgQuery(env.IVY_DB, chatId, args.subject);
     case "fetch_url":
       return await fetchUrl(args.url);
     case "get_current_time":
@@ -1953,6 +2096,7 @@ const TOOL_KEYWORDS = [
   "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
   "page", "website", "web page", "is it live", "is the site", "site down", "site up", "live check", "url",
   "watch this page", "watch the page", "track this page", "track the page", "page change", "page changed", "any changes", "check the page",
+  "what do you know about", "do you know anything about", "knowledge graph", "facts about", "what do you remember about", "tell me about", "connected to", "related to",
 ];
 
 function needsTools(messages: ChatMessage[]): boolean {
