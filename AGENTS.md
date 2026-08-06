@@ -55,7 +55,7 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 | 🖼️ **Publisher** | `scripts/publish_post.py` | Unsplash cover + frontmatter → Jekyll post |
 | 🔍 **Topic Finder** | `scripts/find_trending_topic.py` | News API + Tavily → picks topic |
 | 📖 **Blog Host** | `blog-source/` | Jekyll / Chirpy 7.5, `_posts/` |
-| ⚙️ **CI/CD** | `.github/workflows/daily-telegram.yml` | 3x daily cron + manual dispatch |
+| ⚙️ **CI/CD** | `.github/workflows/blog-writer.yml` | 4x daily cron + manual dispatch (also `repair-posts.yml` every 6h) |
 
 ---
 
@@ -72,6 +72,11 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 | `GET` | `/init` | One-time D1 table creation |
 | `GET` | `/migrate` | Migrate tables to TEXT chat_id |
 | `GET` | `/` | Health check + `?command=set` webhook |
+| `POST` | `/debug/smoke` | Insert a test job due now (needs `x-admin` header) |
+| `POST` | `/debug/jobs` | List all jobs table rows (needs `x-admin`) |
+| `POST` | `/debug/run` | Process due reminders + jobs inline — same code as the cron (needs `x-admin`) |
+| `POST` | `/debug/jobs-clean` | Delete all jobs rows (needs `x-admin`) |
+| `POST` | `/debug/kg` | Dump knowledge-graph triples (needs `x-admin`) |
 
 ---
 
@@ -94,7 +99,7 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 
 ### Full Pipeline
 ```bash
-# Auto: GitHub Actions (3x daily)
+# Auto: GitHub Actions (4x daily)
 # Manual: /write <topic> on Telegram
 
 # Steps:
@@ -110,14 +115,16 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 |----------|----------|---------|---------|
 | `TELEGRAM_BOT_TOKEN` | ✅ Yes | Bot, workflow | Telegram bot auth |
 | `GEMINI_API_KEY` | ✅ Yes | `ai.ts`, `crew.py`, workflow | AI chat + Crew LLM |
-| `GROQ_API_KEY` | ✅ Yes | `ai.ts` | Voice (Whisper) |
+| `GROQ_API_KEY` | ✅ Yes | `ai.ts` | Chat fallback (llama-3.3) + voice (Whisper) |
 | `TAVILY_API_KEY` | ✅ Yes | Bot, crew, workflow | Web search tool |
 | `GITHUB_PAT` | ✅ Yes | `index.ts` | GitHub Actions dispatch |
 | `GITHUB_REPO` | ✅ Yes | `index.ts` | e.g. `Thirupathi-pirate/ivy` |
 | `UNSPLASH_ACCESS_KEY` | ✅ Yes | `publish_post.py`, workflow | Blog cover images |
 | `CURRENTS_API_KEY` | ✅ Yes | `find_trending_topic.py`, workflow | Trending topics (replaces News API) | #WN
 | `TELEGRAM_CHAT_ID` | ✅ Yes | workflow | Notification recipient |
-| `ADMIN_PASSWORD` | ❌ Optional | `index.ts` | Admin API access |
+| `CLOUDFLARE_API_TOKEN` | ✅ Yes | `repair-posts.yml`, `rebuild-deploy.yml` | Cache purge on deploy |
+| `ADMIN_PASSWORD` | ❌ Optional | `index.ts` | Admin + `/debug/*` API access (`x-admin` header) |
+| `IVY_PERSONA` | ❌ Optional | `ai.ts`, `index.ts` | Bot persona override (secret — `wrangler secret put IVY_PERSONA`) |
 | `TMDB_API_KEY` | ❌ Optional | `ai.ts` | Enhanced movie tools |
 | `REDDIT_CLIENT_ID` | ❌ Optional | `ai.ts` | Reddit search |
 | `REDDIT_CLIENT_SECRET` | ❌ Optional | `ai.ts` | Reddit search |
@@ -132,18 +139,18 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 
 ## ⚡ Model Chain
 
-### Bot — Gemini primary, Groq fallback (5-model chain)
+### Bot — Gemini primary, Groq fallback (4-model chain)
 ```
 gemini-2.5-flash-lite         (preferred — 30 RPM / 1,500 RPD / 1M TPM)
   → gemini-2.5-flash           (fallback 1)
   → gemini-3.1-flash-lite      (fallback 2)
   → llama-3.3-70b-versatile    (Groq — fallback 3)
-  → meta-llama/llama-4-scout-17b-16e-instruct  (Groq — fallback 4)
 ```
 - **Provider routing:** models starting with `gemini-` use `GEMINI_API_KEY` + `callGemini`; all others use `GROQ_API_KEY` + `callGroq` (OpenAI-compatible, tool support via `tool_choice: "auto"`).
 - **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`).
 - **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
-**Rate limiting:** Detects 429, 503, Gemini error codes. If all 5 models exhausted → *"I'm rate-limited across all models"*.
+**Rate limiting:** Detects 429, 503, Gemini error codes. If all 4 models exhausted → *"I'm rate-limited across all models"*.
+**Provider timeouts:** 45s AbortController per API call, kept armed through the response body read (a slow/hung body falls through to the next model instead of hanging the message).
 
 ### Blog Writer (CrewAI) — Gemini only
 ```
@@ -181,6 +188,34 @@ CREATE TABLE reminders (
   message TEXT NOT NULL
 );
 CREATE INDEX idx_reminders_timestamp ON reminders(timestamp);
+
+-- Self-service cron jobs (recurring reminders + keyword alerts + page watches)
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  type TEXT NOT NULL,             -- daily / weekly / hourly / keyword / pagewatch
+  schedule TEXT NOT NULL,
+  message TEXT,
+  keyword TEXT,
+  next_run INTEGER NOT NULL,      -- epoch ms
+  last_run INTEGER,
+  last_result TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX idx_jobs_next_run ON jobs(next_run);
+CREATE INDEX idx_jobs_chat ON jobs(chat_id);
+
+-- Knowledge graph (subject → predicate → object per user)
+CREATE TABLE knowledge (
+  chat_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  predicate TEXT NOT NULL,
+  object TEXT NOT NULL,
+  source TEXT,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, subject, predicate, object)
+);
+CREATE INDEX idx_knowledge_subject ON knowledge(chat_id, subject);
 ```
 
 **History cap:** system prompt + 9 most recent user/assistant turns.
@@ -208,12 +243,21 @@ Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for
 | Tool | Description |
 |------|-------------|
 | `search_web(query)` | Tavily search (`include_answer: true`), summary + 5 results |
-| `fetch_url(url)` | Fetch URL content (first 8000 chars) |
+| `fetch_url(url)` | Fetch URL content (first ~15K chars, 20s timeout, content-type check) |
 
-### 🕐 Time
+### ⏱️ Jobs (self-service cron: recurring reminders + keyword alerts + page watches)
+| Tool | Description |
+|------|-------------|
+| `create_job(type, schedule, message?, keyword?, url?)` | Daily/weekly/hourly reminders, keyword alerts, pagewatch change detection |
+| `list_jobs()` | List active jobs with next run time |
+| `cancel_job(job_id)` | Cancel by ID |
+
+### 🌦️ Utilities
 | Tool | Description |
 |------|-------------|
 | `get_current_time(timezone?)` | UTC or IANA timezone (e.g. `Asia/Kolkata`) |
+| `get_weather(city)` | Weather for a city |
+| `get_youtube_transcript(url)` | Summarize a YouTube video from its transcript |
 
 ### 🎬 Movies (3-source fallback)
 | Tool | Chain | Description |
@@ -387,14 +431,15 @@ Jekyll site — **Chirpy 7.5** — **Midnight Purple** theme.
 
 ## ⚙️ CI/CD Workflow
 
-### `.github/workflows/daily-telegram.yml`
+### `.github/workflows/blog-writer.yml`
 
 ```yaml
 on:
   schedule:
-    - cron: "20 0 * * *"    # 5:50 AM IST → tech
-    - cron: "30 4 * * *"    # 10:00 AM IST → general
-    - cron: "0 12 * * *"    # 5:30 PM IST → general
+    - cron: "30 23 * * *"    # 5:00 AM IST → general
+    - cron: "30 4 * * *"     # 10:00 AM IST → tech
+    - cron: "30 9 * * *"     # 3:00 PM IST → general
+    - cron: "30 14 * * *"    # 8:00 PM IST → tech
   workflow_dispatch:
     inputs:
       topic:
@@ -414,7 +459,9 @@ on:
 8. Telegram notification       ─ sendMessage to TELEGRAM_CHAT_ID
 ```
 
-**Tech vs General:** UTC 00:20 (IST 5:50 AM) → tech; UTC 04:30 (IST 10:00 AM) → general; UTC 12:00 (IST 5:30 PM) → general.
+**Tech vs General:** IST hour 10 or 20 (UTC 04:30 / 14:30) → tech; IST 5 AM (UTC 23:30) and 3 PM (UTC 09:30) → general.
+
+Also: `.github/workflows/repair-posts.yml` — every 6h, runs `scripts/repair_posts.py` to fix LLM-leak / truncation issues in `_posts/`, then rebuilds + redeploys + purges Cloudflare cache. Only fires when posts actually changed (idempotent; cosmetic newline diffs are skipped).
 
 ---
 
