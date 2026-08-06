@@ -1548,7 +1548,15 @@ app.all("*", async (c) => {
   try {
     update = JSON.parse(raw);
     updateId = update?.update_id ?? null;
-  } catch {}
+  } catch {
+    // Never swallow a body-parse failure silently: without this the flow would
+    // pass null into grammY's handleUpdate and die with a cryptic "Cannot read
+    // properties of null (reading 'update_id')" deep in the bundled lib.
+    console.error(`[WEBHOOK] Invalid JSON body (${raw.length} bytes): ${raw.slice(0, 200)}`);
+  }
+  if (!update) {
+    return c.text("Bad request", 400);
+  }
   if (updateId !== null) {
     if (recentUpdates.has(updateId)) {
       return c.text("OK", 200);
