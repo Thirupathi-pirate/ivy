@@ -596,6 +596,20 @@ export async function createJob(
   schedule: Schedule,
   payload: { message?: string; keyword?: string }
 ): Promise<{ id: string; next_run: number } | null> {
+  // Dedup guard: models occasionally call create_job twice (double tool-call or
+  // a repeated turn). An identical enabled job (same chat, type, message/keyword)
+  // returns the existing row instead of piling up duplicate reminders/alerts.
+  const dedupKey = type === "keyword" ? payload.keyword : payload.message;
+  if (dedupKey) {
+    const matchCol = type === "keyword" ? "keyword" : "message";
+    const existing = await db
+      .prepare(
+        `SELECT id, next_run FROM jobs WHERE chat_id = ? AND type = ? AND enabled = 1 AND ${matchCol} = ? LIMIT 1`
+      )
+      .bind(chatId, type, dedupKey)
+      .first<{ id: string; next_run: number }>();
+    if (existing) return existing;
+  }
   const id = crypto.randomUUID().slice(0, 8);
   const next_run = computeJobNextRun(JSON.stringify(schedule), Date.now());
   await db
@@ -1603,6 +1617,7 @@ function getTools(env: Env) {
 // ===================== Function Call Dispatcher =====================
 
 async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCall): Promise<string> {
+  console.log(`[TOOL] ${toolCall.function.name} :: ${(toolCall.function.arguments || "").slice(0, 140)}`);
   // Never let malformed/empty tool arguments crash the whole reply.
   let args: any = {};
   try {
