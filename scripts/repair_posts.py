@@ -122,6 +122,15 @@ def main() -> None:
         desc = first_paragraph(repaired)
         changes = []
 
+        # Guard against cosmetic churn: repair_body normalizes leading/trailing
+        # newlines, so a post that merely lacks a trailing newline at EOF would
+        # otherwise diff and trigger a spurious "leak repair" (rebuild + deploy
+        # + Cloudflare purge + Telegram notification). Only a REAL content fix
+        # should count as a change.
+        if body != repaired and body.strip("\n") == repaired.strip("\n"):
+            print(f"SKIP {path}: cosmetic newline-only difference")
+            continue
+
         # --- description fix ---
         new_fm = fm
         desc_match = re.search(r"(?m)^description:.*(?:\n  .*)*$", new_fm)
