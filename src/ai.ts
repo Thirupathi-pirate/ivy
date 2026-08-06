@@ -53,6 +53,9 @@ interface GroqToolCall {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
+  /** Gemini thinking models require the functionCall's thought_signature to be
+   *  echoed back on the next turn — preserve it across the tool loop. */
+  thoughtSignature?: string;
 }
 
 export type StreamCallback = (text: string, done: boolean) => Promise<void>;
@@ -1892,6 +1895,9 @@ function messagesToGeminiContents(messages: ChatMessage[]): {
         }
         const fc: any = { name: tc.function.name, args };
         if (tc.id) fc.id = tc.id;
+        // Echo the thoughtSignature back so thinking-enabled Gemini models
+        // accept the replayed functionCall (else 400 "missing a thought_signature").
+        if (tc.thoughtSignature) fc.thoughtSignature = tc.thoughtSignature;
         parts.push({ functionCall: fc });
       }
       contents.push({ role: "model", parts });
@@ -1996,17 +2002,22 @@ async function callGemini(
   for (const part of parts) {
     if (part.text) text += part.text;
     if (part.functionCall) {
+      const fc = part.functionCall;
       toolCalls.push({
         // Gemini 3 models return a unique id per functionCall that must be
         // echoed back in the functionResponse — preserve it when present.
-        id: part.functionCall.id || `call_gemini_${Date.now()}_${toolCalls.length}`,
+        id: fc.id || `call_gemini_${Date.now()}_${toolCalls.length}`,
         type: "function",
         function: {
-          name: part.functionCall.name,
-          arguments: typeof part.functionCall.args === "string"
-            ? part.functionCall.args
-            : JSON.stringify(part.functionCall.args),
+          name: fc.name,
+          arguments: typeof fc.args === "string"
+            ? fc.args
+            : JSON.stringify(fc.args),
         },
+        // Thinking models (e.g. gemini-2.5-flash-lite) attach a
+        // thoughtSignature to each functionCall — required on replay, or the
+        // API rejects the next request with "missing a thought_signature".
+        thoughtSignature: fc.thoughtSignature,
       });
     }
   }
@@ -2154,9 +2165,19 @@ async function processAiInternal(
       }
       console.log(`[MODEL] ${isGeminiModel ? "Gemini" : "Groq"} :: ${model} :: turn ${turn}/${maxDepth} :: tools ${useTools ? "on" : "off"}`);
 
-      const response = isGeminiModel
-        ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)
-        : await callGroq(apiKey, currentMessages, useTools ? tools : [], model);
+      let response:
+        | Awaited<ReturnType<typeof callGemini>>
+        | Awaited<ReturnType<typeof callGroq>>;
+      try {
+        response = isGeminiModel
+          ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)
+          : await callGroq(apiKey, currentMessages, useTools ? tools : [], model);
+      } catch (e: any) {
+        // Model-specific API error (e.g. malformed request) — log and fall
+        // through to the next model in the chain instead of killing the message.
+        console.warn(`[${model}] model call error: ${e?.message || e}`);
+        break;
+      }
 
       if ("_rateLimited" in response) break;
       if ("_retry" in response) {
