@@ -49,7 +49,7 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 
 | Layer | File | Purpose |
 |-------|------|---------|
-| 🟦 **Telegram Bot** | `src/index.ts` | Hono app, grammY bot, webhook, admin API, Discord stub |
+| 🟦 **Telegram Bot** | `src/index.ts` | Hono app, grammY bot, webhook, admin API |
 | 🧠 **AI Engine** | `src/ai.ts` | Gemini API, tool loop, memory CRUD, movie tools, voice, PDF |
 | 📝 **Blog Writer** | `src/blog_writing_crew/main.py` | `run()`, `train()`, `replay()`, `test()` |
 | 🔧 **Writer Tools** | `src/blog_writing_crew/tools/custom_tool.py` | Tavily, Wikipedia, HN, ArXiv, OpenLibrary, RSS |
@@ -68,9 +68,6 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 | `POST` | `/admin/posts` | List blog posts from GitHub (needs `ADMIN_PASSWORD`) |
 | `POST` | `/admin/delete` | Delete post + trigger rebuild (needs `ADMIN_PASSWORD`) |
 | `POST` | `/admin/commands` | Re-register Telegram command menu (`setMyCommands`) + return BotFather paste text (needs `ADMIN_PASSWORD`) |
-| `POST` | `/discord` | Discord interactions (Ed25519 verify → PONG → deferred) |
-| `POST` | `/register-commands` | Bulk-register Discord slash commands |
-| `POST` | `/chat-message` | Relay for Discord Gateway @mention |
 | `GET` | `/init` | One-time D1 table creation |
 | `GET` | `/migrate` | Migrate tables to TEXT chat_id |
 | `GET` | `/` | Health check + `?command=set` webhook |
@@ -131,9 +128,6 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 | `REDDIT_CLIENT_ID` | ❌ Optional | `ai.ts` | Reddit search |
 | `REDDIT_CLIENT_SECRET` | ❌ Optional | `ai.ts` | Reddit search |
 | `REDDIT_USER_AGENT` | ❌ Optional | `ai.ts` | Reddit search |
-| `DISCORD_BOT_TOKEN` | ❌ Optional | `index.ts` | Discord bot |
-| `DISCORD_PUBLIC_KEY` | ❌ Optional | `index.ts` | Ed25519 verify |
-| `DISCORD_APP_ID` | ❌ Optional | `index.ts` | Command registration |
 
 > ⚠️ `.env` is **gitignored** (local dev only). Production secrets go via `wrangler secret put <NAME>` — never paste a key into a chat or commit it.
 
@@ -159,7 +153,7 @@ gemini-2.5-flash-lite         (preferred — fast/cheap, biggest free quota)
 - **Per-model free-tier quota:** Gemini free tier caps each model's requests per day per project (e.g. `gemini-2.5-flash` ≈ 20/day). More models in the chain = more daily buckets = more total capacity before hitting Groq.
 - **Groq free tier:** 30 RPM per model; llama-3.3-70b 1K RPD / 12K TPM / **100K TPD**, gpt-oss-* 1K RPD / 8K TPM, llama-3.1-8b 14.4K RPD / 6K TPM. TPD is the binding constraint — each request charges input + reserved `max_tokens` against the daily bucket. 429s fall through silently to the next model (429 body is logged with the bucket numbers).
 - **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`). Long replies (movie breakdowns, multi-section answers) need the headroom; the cost is that Groq free TPD (llama-3.3 = 100K) charges input + reserved `max_tokens`, so one request burns ~10K — ~10 messages/day before the bucket dies and the chain falls through to Gemini. Tradeoff accepted: a cut-off reply is worse than burning the bucket faster.
-- **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
+- **Selectable** via `/models`, `/model <name>` (single source of truth: `MODELS` exported from `src/ai.ts`).
 **Rate limiting:** Detects 429, 503, Gemini error codes. If all 11 models exhausted → *"I'm rate-limited across all models"*.
 **Provider timeouts:** 8s fast-fail per model call (`MODEL_CALL_TIMEOUT_MS`). The webhook ACKs Telegram instantly and runs the AI loop in `ctx.waitUntil()`, which extends execution up to 30s after the response — the free-plan platform otherwise terminates webhook requests at ~10s wall-clock, which killed multi-turn tool flows (side effects ran, reply lost). The 8s fast-fail keeps slow models (3.6-flash / 2.5-pro on free tier) from monopolizing the 30s budget: each handoff burns ≤8s, so a 2-3 turn tool loop fits comfortably.
 
@@ -532,9 +526,6 @@ database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f"
 [triggers]
 crons = ["* * * * *"]
 
-[vars]
-DISCORD_APP_ID = "1521363304579338330"
-DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8ffcd22b"
 ```
 
 > KV is declared but **not actively used**. D1 is the primary store: sessions, memories, reminders, jobs, knowledge graph, and the cross-isolate webhook dedup table.

@@ -48,10 +48,6 @@ interface Env {
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
   IVY_DB: D1Database;
-  DISCORD_BOT_TOKEN: string;
-  DISCORD_APP_ID: string;
-  DISCORD_PUBLIC_KEY: string;
-  DISCORD_RELAY_SECRET?: string;
   /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
   IVY_PERSONA?: string;
 }
@@ -660,6 +656,31 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     await ctx.reply(out);
   });
 
+  bot.command("write", async (ctx) => {
+    const topic = ctx.match?.trim();
+    if (!topic) {
+      await ctx.reply("Send a topic like: \`/write AI music trends 2026\`");
+      return;
+    }
+    await ctx.reply("✍️ Writing a blog post on **" + topic + "**...\nI'll send you the link when it's ready!", {
+      parse_mode: "Markdown",
+    });
+    const ghResp = await fetch(
+      `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/blog-writer.yml/dispatches`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_PAT}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "telegram-bot-worker",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ref: "main", inputs: { topic } }),
+      }
+    );
+    if (!ghResp.ok) await ctx.reply("❌ Failed to trigger workflow: " + (await ghResp.text()));
+  });
+
   // ---------- Callback Queries (Model Switching) ----------
 
   bot.on("callback_query:data", async (ctx) => {
@@ -688,35 +709,6 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
     if (!msg) return;
     const text = msg.text.trim();
 
-    if (text.startsWith("/write ")) {
-      const topic = text.slice(7).trim();
-      if (!topic) {
-        await ctx.reply("Send a topic like: \`/write AI music trends 2026\`");
-        return;
-      }
-      await ctx.reply("✍️ Writing a blog post on **" + topic + "**...\nI'll send you the link when it's ready!", {
-        parse_mode: "Markdown",
-      });
-      const ghResp = await fetch(
-        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/blog-writer.yml/dispatches`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${env.GITHUB_PAT}`,
-            Accept: "application/vnd.github.v3+json",
-            "User-Agent": "telegram-bot-worker",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ref: "main", inputs: { topic } }),
-        }
-      );
-      if (!ghResp.ok) await ctx.reply("❌ Failed to trigger workflow: " + (await ghResp.text()));
-      return;
-    }
-    if (text === "/write") {
-      await ctx.reply("Send a topic like: \`/write AI music trends 2026\`");
-      return;
-    }
     if (text.startsWith("/")) return;
 
     // --- Auto-load URLs: send a link → Ivy fetches it and keeps it as the
@@ -1126,283 +1118,6 @@ app.post("/admin/delete", async (c) => {
     console.error("Rebuild dispatch failed:", await dispatchResp.text());
   }
   return c.json({ success: true }, 200, corsHeaders(c.req.header("Origin")));
-});
-
-// ---------- Discord Integration ----------
-
-const DISCORD_API_BASE = "https://discord.com/api/v10";
-
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) bytes[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  return bytes;
-}
-
-async function verifyDiscordRequest(publicKeyHex: string, signature: string | null | undefined, timestamp: string | null | undefined, body: string): Promise<boolean> {
-  if (!signature || !timestamp) return false;
-  try {
-    const key = await crypto.subtle.importKey("raw", hexToBytes(publicKeyHex), { name: "Ed25519" }, false, ["verify"]);
-    return await crypto.subtle.verify("Ed25519", key, hexToBytes(signature), new TextEncoder().encode(timestamp + body));
-  } catch { return false; }
-}
-
-function sanitizeDiscordMarkdown(text: string): string {
-  return text
-    .replace(/^#{1,6}\s+/gm, "**")
-    .replace(/^>\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "*$1*")
-    .replace(/^(\s*)\*\s+/gm, "$1• ")
-    .replace(/_/g, "\\_");
-}
-
-const DISCORD_COMMANDS = [
-  { name: "chat", description: "Chat with Ivy", options: [{ type: 3, name: "message", description: "Your message", required: true }] },
-  { name: "new", description: "Reset conversation" },
-  { name: "clear", description: "Clear conversation history" },
-  { name: "system", description: "View bot status" },
-  { name: "write", description: "Write a blog post", options: [{ type: 3, name: "topic", description: "Blog topic", required: true }] },
-  {
-    name: "model", description: "Switch AI model", options: [{
-      type: 3, name: "name", description: "Model name", required: true,
-      choices: [
-        { name: "Gemini 2.5 Flash Lite", value: "gemini-2.5-flash-lite" },
-        { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash" },
-        { name: "Gemini 3.1 Flash Lite", value: "gemini-3.1-flash-lite" },
-        { name: "Gemini 3.5 Flash Lite", value: "gemini-3.5-flash-lite" },
-        { name: "Gemini 3.5 Flash", value: "gemini-3.5-flash" },
-        { name: "Gemini 3.6 Flash", value: "gemini-3.6-flash" },
-        { name: "Gemini 2.5 Pro", value: "gemini-2.5-pro" },
-        { name: "GPT-OSS 120B (Groq)", value: "openai/gpt-oss-120b" },
-        { name: "Llama 3.3 70B (Groq)", value: "llama-3.3-70b-versatile" },
-        { name: "GPT-OSS 20B (Groq)", value: "openai/gpt-oss-20b" },
-        { name: "Llama 3.1 8B (Groq)", value: "llama-3.1-8b-instant" },
-      ],
-    }],
-  },
-];
-
-async function handleDiscordCommand(env: Env, interaction: any, token: string) {
-  const commandName = interaction.data.name;
-  const userId = String(interaction.member?.user?.id || interaction.user?.id);
-  const sessionKey = `discord:${userId}`;
-  const webhookUrl = `${DISCORD_API_BASE}/webhooks/${env.DISCORD_APP_ID}/${token}/messages/@original`;
-  console.log("DISCORD_CMD: handling", commandName, "for user", userId.slice(0, 10));
-
-  const reply = async (content: string) => {
-    await fetch(webhookUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: sanitizeDiscordMarkdown(content).slice(0, 2000) }),
-    });
-  };
-
-  try {
-    if (commandName === "chat") {
-      const text = interaction.data.options?.find((o: any) => o.name === "message")?.value || "";
-      const memories = await loadUserMemories(env.IVY_DB, sessionKey);
-      const hasMovies = !!(env.TMDB_API_KEY || (env.REDDIT_CLIENT_ID && env.REDDIT_CLIENT_SECRET) || env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt({ memories, hasMovies, persona: env.IVY_PERSONA });
-
-      const row = await env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
-      const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
-      let history = session.history || [];
-
-      const sysIdx = history.findIndex((m: any) => m.role === "system");
-      if (sysIdx >= 0) history[sysIdx].content = sysPrompt;
-      else history.unshift({ role: "system", content: sysPrompt });
-      history.push({ role: "user", content: text });
-
-      const result = await processAi(env, history, sessionKey, session.model);
-
-      if (result.text) {
-        const clean = sanitizeDiscordMarkdown(result.text);
-        await reply(clean);
-      }
-
-      history.push({ role: "assistant", content: result.text });
-      if (history.length > 10) {
-        const sIdx = history.findIndex((m: any) => m.role === "system");
-        if (sIdx >= 0) history = [history[sIdx], ...history.slice(-9)];
-        else history = history.slice(-10);
-      }
-      await env.IVY_DB.prepare("INSERT INTO sessions (chat_id, data) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET data = excluded.data").bind(sessionKey, JSON.stringify({ history, model: session.model })).run();
-      return;
-    }
-
-    if (commandName === "new" || commandName === "clear") {
-      await env.IVY_DB.prepare("DELETE FROM sessions WHERE chat_id = ?").bind(sessionKey).run();
-      await reply(commandName === "new" ? "New conversation started 💬" : "Conversation reset ✅");
-      return;
-    }
-
-    if (commandName === "write") {
-      const topic = interaction.data.options?.find((o: any) => o.name === "topic")?.value || "";
-      console.log("WRITE_CMD: topic option", topic, "key length", topic.length);
-      if (!topic) {
-        console.log("WRITE_CMD: empty topic, sending error");
-        await reply("Provide a topic like: `write hello`");
-        return;
-      }
-      console.log("WRITE_CMD: dispatching to GitHub, topic:", topic);
-      const ghResp = await fetch(
-        `https://api.github.com/repos/${env.GITHUB_REPO}/actions/workflows/blog-writer.yml/dispatches`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${env.GITHUB_PAT}`,
-            Accept: "application/vnd.github.v3+json",
-            "User-Agent": "telegram-bot-worker",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ ref: "main", inputs: { topic } }),
-        }
-      );
-      console.log("WRITE_CMD: GitHub response", ghResp.status);
-      if (ghResp.ok) {
-        await reply("✍️ Writing a blog post on **" + topic + "**... Check the blog later!");
-      } else {
-        const errText = await ghResp.text();
-        console.log("WRITE_CMD: GitHub error body", errText);
-        await reply("❌ Failed to trigger: " + errText);
-      }
-      return;
-    }
-
-    if (commandName === "system") {
-      const row = await env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
-      const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
-      const memResult = await env.IVY_DB.prepare("SELECT COUNT(*) as cnt FROM memories WHERE chat_id = ?").bind(sessionKey).first<{ cnt: number }>();
-      await reply(`**Ivy System Info**\nModel: \`${session.model}\`\nMessages: ${session.history?.length || 0}\nMemories: ${memResult?.cnt ?? 0}`);
-      return;
-    }
-
-    if (commandName === "model") {
-      const modelName = interaction.data.options?.find((o: any) => o.name === "name")?.value;
-      if (modelName && MODELS.includes(modelName)) {
-        const row = await env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
-        const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
-        session.model = modelName;
-        await env.IVY_DB.prepare("INSERT INTO sessions (chat_id, data) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET data = excluded.data").bind(sessionKey, JSON.stringify(session)).run();
-        await reply(`Switched to \`${modelName}\` ✅`);
-      } else {
-        await reply("Invalid model. Choose: " + MODELS.join(", "));
-      }
-      return;
-    }
-
-    await reply("Unknown command.");
-  } catch (e: any) {
-    await reply(`Error: ${e.message}`);
-  }
-}
-
-// ---------- Discord Interaction Handler ----------
-
-app.post("/discord", async (c) => {
-  const signature = c.req.header("X-Signature-Ed25519");
-  const timestamp = c.req.header("X-Signature-Timestamp");
-  const body = await c.req.raw.clone().text();
-
-  const isValid = await verifyDiscordRequest(c.env.DISCORD_PUBLIC_KEY, signature, timestamp, body);
-  if (!isValid) return c.text("Invalid signature", 401);
-
-  const interaction = JSON.parse(body);
-
-  // PING → PONG
-  if (interaction.type === 1) return c.json({ type: 1 });
-
-  // Slash command
-  if (interaction.type === 2) {
-    const token = interaction.token;
-    c.executionCtx.waitUntil(handleDiscordCommand(c.env, interaction, token));
-    return c.json({ type: 5 }); // DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
-  }
-
-  return c.text("OK", 200);
-});
-
-// ---------- Register Discord Slash Commands ----------
-
-app.post("/register-commands", async (c) => {
-  const results: any[] = [];
-  for (const cmd of DISCORD_COMMANDS) {
-    const resp = await fetch(`${DISCORD_API_BASE}/applications/${c.env.DISCORD_APP_ID}/commands`, {
-      method: "POST",
-      headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify(cmd),
-    });
-    const data = await resp.json();
-    results.push({ command: cmd.name, status: resp.status, response: data });
-  }
-  return c.json(results);
-});
-
-// ---------- Relay: Incoming chat messages from Gateway relay ----------
-
-async function sendDiscordMessage(botToken: string, channelId: string, text: string) {
-  const body = JSON.stringify({ content: sanitizeDiscordMarkdown(text).slice(0, 2000) });
-  await fetch(`${DISCORD_API_BASE}/channels/${channelId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bot ${botToken}`, "Content-Type": "application/json" },
-    body,
-  });
-}
-
-app.post("/chat-message", async (c) => {
-  const relaySecret = c.req.header("X-Relay-Secret");
-  if (!c.env.DISCORD_RELAY_SECRET || relaySecret !== c.env.DISCORD_RELAY_SECRET) {
-    return c.text("Unauthorized", 401);
-  }
-
-  const { channelId, text, authorId } = await c.req.json<{
-    channelId: string;
-    text: string;
-    authorId: string;
-    guildId?: string;
-  }>();
-
-  const sessionKey = `discord:${authorId}`;
-
-  c.executionCtx.waitUntil((async () => {
-    try {
-      // Send typing indicator
-      await fetch(`${DISCORD_API_BASE}/channels/${channelId}/typing`, {
-        method: "POST",
-        headers: { Authorization: `Bot ${c.env.DISCORD_BOT_TOKEN}` },
-      }).catch(() => {});
-
-      const memories = await loadUserMemories(c.env.IVY_DB, sessionKey);
-      const hasMovies = !!(c.env.TMDB_API_KEY || (c.env.REDDIT_CLIENT_ID && c.env.REDDIT_CLIENT_SECRET) || c.env.TAVILY_API_KEY);
-      const sysPrompt = getSystemPrompt({ memories, hasMovies, persona: c.env.IVY_PERSONA });
-
-      const row = await c.env.IVY_DB.prepare("SELECT data FROM sessions WHERE chat_id = ?").bind(sessionKey).first<{ data: string }>();
-      const session: SessionData = row ? JSON.parse(row.data) : { history: [], model: MODELS[0] };
-      let history = session.history || [];
-
-      const sysIdx = history.findIndex((m: any) => m.role === "system");
-      if (sysIdx >= 0) history[sysIdx].content = sysPrompt;
-      else history.unshift({ role: "system", content: sysPrompt });
-      history.push({ role: "user", content: text });
-
-      const result = await processAi(c.env, history, sessionKey, session.model);
-
-      if (result.text) {
-        await sendDiscordMessage(c.env.DISCORD_BOT_TOKEN, channelId, result.text);
-      }
-
-      history.push({ role: "assistant", content: result.text });
-      if (history.length > 10) {
-        const sIdx = history.findIndex((m: any) => m.role === "system");
-        if (sIdx >= 0) history = [history[sIdx], ...history.slice(-9)];
-        else history = history.slice(-10);
-      }
-      await c.env.IVY_DB.prepare("INSERT INTO sessions (chat_id, data) VALUES (?, ?) ON CONFLICT(chat_id) DO UPDATE SET data = excluded.data").bind(sessionKey, JSON.stringify({ history, model: session.model })).run();
-    } catch (e: any) {
-      await sendDiscordMessage(c.env.DISCORD_BOT_TOKEN, channelId, `Error: ${e.message}`);
-    }
-  })());
-
-  return c.text("Accepted", 202);
 });
 
 // CORS preflight for admin routes
