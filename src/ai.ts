@@ -1895,10 +1895,14 @@ function messagesToGeminiContents(messages: ChatMessage[]): {
         }
         const fc: any = { name: tc.function.name, args };
         if (tc.id) fc.id = tc.id;
-        // Echo the thoughtSignature back so thinking-enabled Gemini models
-        // accept the replayed functionCall (else 400 "missing a thought_signature").
-        if (tc.thoughtSignature) fc.thoughtSignature = tc.thoughtSignature;
-        parts.push({ functionCall: fc });
+        // Echo the thoughtSignature back on the PART (sibling of functionCall)
+        // so thinking-enabled Gemini models accept the replayed functionCall.
+        // History written before thought signatures existed (old D1 sessions)
+        // has none — use the documented validator-skip value so those don't 400.
+        parts.push({
+          functionCall: fc,
+          thoughtSignature: tc.thoughtSignature || "skip_thought_signature_validator",
+        });
       }
       contents.push({ role: "model", parts });
       continue;
@@ -2014,10 +2018,11 @@ async function callGemini(
             ? fc.args
             : JSON.stringify(fc.args),
         },
-        // Thinking models (e.g. gemini-2.5-flash-lite) attach a
-        // thoughtSignature to each functionCall — required on replay, or the
-        // API rejects the next request with "missing a thought_signature".
-        thoughtSignature: fc.thoughtSignature,
+        // Thought signatures live on the Part itself (sibling of functionCall),
+        // NOT inside functionCall. Thinking models (Gemini 2.5/3.x) attach one
+        // to the first functionCall part — required on replay or the API
+        // rejects the next request with "missing a thought_signature".
+        thoughtSignature: part.thoughtSignature,
       });
     }
   }
