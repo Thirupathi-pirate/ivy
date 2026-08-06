@@ -295,7 +295,7 @@ export async function fetchUrlContent(rawUrl: string): Promise<UrlFetchResult> {
     const resp = await fetch(url, {
       headers: { "User-Agent": BROWSER_UA, "Accept-Language": "en" },
       redirect: "follow",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
     });
     const finalUrl = resp.url || url;
     if (!resp.ok) return { ok: false, status: resp.status, url: finalUrl, fetchedAt, error: `HTTP ${resp.status}` };
@@ -759,7 +759,8 @@ export async function getWeather(city: string): Promise<string> {
     const key = city.trim().toLowerCase().replace(/\s+/g, "");
     const searchName = CITY_ALIASES[key] ?? city.trim();
     const geoResp = await fetch(
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=10&language=en&format=json`
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=10&language=en&format=json`,
+      { signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) }
     );
     if (!geoResp.ok) return `Weather lookup failed (${geoResp.status}).`;
     const geo: any = await geoResp.json();
@@ -771,7 +772,7 @@ export async function getWeather(city: string): Promise<string> {
       `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}` +
       `&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m` +
       `&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2`;
-    const wResp = await fetch(url);
+    const wResp = await fetch(url, { signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) });
     if (!wResp.ok) return `Weather API error (${wResp.status}).`;
     const w: any = await wResp.json();
     const cur = w.current || {};
@@ -812,6 +813,7 @@ async function fetchYouTubePlayerResponse(videoId: string): Promise<any | null> 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId, context: { client } }),
+        signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
       });
       if (resp.ok) {
         const data: any = await resp.json();
@@ -821,7 +823,7 @@ async function fetchYouTubePlayerResponse(videoId: string): Promise<any | null> 
   }
   // Fallback: scrape the watch page for ytInitialPlayerResponse
   try {
-    const html = await (await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: { "Accept-Language": "en" } })).text();
+    const html = await (await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: { "Accept-Language": "en" }, signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) })).text();
     const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{.*?\});\s*(?:var\s|<\/script|$)/s);
     if (m) {
       try {
@@ -843,7 +845,7 @@ export async function getYoutubeTranscript(url: string): Promise<string> {
   // Prefer manual English captions, then any non-ASR track
   const rank = (t: any) => (t.languageCode?.startsWith("en") ? 0 : 1) + (t.kind === "asr" ? 2 : 0);
   const track = [...tracks].sort((a, b) => rank(a) - rank(b))[0];
-  const tResp = await fetch(`${track.baseUrl}&fmt=json3`);
+  const tResp = await fetch(`${track.baseUrl}&fmt=json3`, { signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) });
   if (!tResp.ok) return `Failed to fetch captions (${tResp.status}).`;
   const data: any = await tResp.json();
   const events: any[] = data.events || [];
@@ -906,7 +908,7 @@ async function tmdbFetch(apiKey: string, path: string, params: Record<string, st
   for (const [k, v] of Object.entries(params)) {
     if (v) url.searchParams.set(k, v);
   }
-  const resp = await fetch(url.toString());
+  const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) });
   if (!resp.ok) return null;
   return resp.json();
 }
@@ -986,6 +988,7 @@ async function getRedditToken(clientId: string, clientSecret: string, userAgent:
       "User-Agent": userAgent,
     },
     body: "grant_type=client_credentials",
+    signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
   });
   if (!resp.ok) return null;
   const data: RedditToken = await resp.json();
@@ -1010,6 +1013,7 @@ async function redditGet(
       Authorization: `Bearer ${token}`,
       "User-Agent": userAgent,
     },
+    signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
   });
   if (!resp.ok) return null;
   return resp.json();
@@ -1153,6 +1157,7 @@ async function tavilySearch(apiKey: string, query: string): Promise<string | nul
       max_results: 5,
       include_answer: true,
     }),
+    signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
   });
   if (!resp.ok) return null;
   const data: any = await resp.json();
@@ -1259,6 +1264,7 @@ async function searchWeb(apiKey: string, query: string) {
       max_results: 5,
       include_answer: true,
     }),
+    signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS),
   });
   if (!resp.ok) return `Search failed (${resp.status})`;
   const data: any = await resp.json();
@@ -1808,11 +1814,15 @@ const MODEL_MAX_TOKENS: Record<string, number> = {
   "openai/gpt-oss-120b": 8192,
 };
 
-// The platform terminates webhook requests after ~10s wall-clock (free plan).
-// A 45s abort never fires on that path — a slow-but-alive model would kill the
-// whole message instead of falling through the chain. Fast-fail at 8s so slow
-// models (e.g. gemini-3.6-flash on free tier) hand off to the next model.
+// Webhook processing runs in ctx.waitUntil (30s budget after the instant ACK).
+// Fast-fail each model call at 8s so slow models (e.g. gemini-3.6-flash on free
+// tier) hand off down the chain instead of monopolizing the 30s budget.
 const MODEL_CALL_TIMEOUT_MS = 8000;
+
+// Tool calls (web search, fetch_url, weather, YouTube, movies) must also stay
+// fast: a hung third-party API must not eat the 30s waitUntil budget before
+// the reply is sent.
+const TOOL_CALL_TIMEOUT_MS = 8000;
 
 async function callGroq(
   apiKey: string,

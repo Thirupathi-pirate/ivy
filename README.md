@@ -53,6 +53,7 @@ Ivy is a Telegram bot that chats like a friend, remembers everything, and writes
                     │  │ memories       │  │  (tools)   │ │
                     │  │ reminders      │  └────────────┘ │
                     │  │ jobs, knowledge│                 │
+                    │  │ dedup (updates)│                 │
                     │  └───────────────┘                  │
                     └──────────┬───────────────────────────┘
                                │

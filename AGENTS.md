@@ -23,8 +23,9 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 
 ```
 1. Telegram webhook POST → Worker (Hono + grammY)
-   ├─ Dedup by update_id (in-memory Map, 10s TTL)
-   ├─ Session loaded from D1 (d1SessionAdapter)
+   ├─ Dedup by update_id (D1 `INSERT OR IGNORE` + in-memory fast path)
+   ├─ ACK Telegram instantly, then AI loop runs in `waitUntil` (30s budget — beats the ~10s free-plan webhook wall)
+   ├─ Session loaded from D1 (d1SessionAdapter) — per-chat serialized
    ├─ Memories loaded from D1 → injected into system prompt
    ├─ Gemini API (chat + tool loop, max 5 turns)
    │  ├─ memory_save / memory_recall
@@ -63,7 +64,7 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 
 | Method | Path | Handler |
 |--------|------|---------|
-| `POST` | `/` | Telegram webhook — parse update, create Bot, `webhookCallback` |
+| `POST` | `/` | Telegram webhook — parse update, D1 dedup, ACK instantly, AI loop in `waitUntil` (30s budget) |
 | `POST` | `/admin/posts` | List blog posts from GitHub (needs `ADMIN_PASSWORD`) |
 | `POST` | `/admin/delete` | Delete post + trigger rebuild (needs `ADMIN_PASSWORD`) |
 | `POST` | `/discord` | Discord interactions (Ed25519 verify → PONG → deferred) |
@@ -159,7 +160,7 @@ gemini-2.5-flash-lite         (preferred — fast/cheap, biggest free quota)
 - **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`).
 - **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
 **Rate limiting:** Detects 429, 503, Gemini error codes. If all 11 models exhausted → *"I'm rate-limited across all models"*.
-**Provider timeouts:** 8s fast-fail per model call (`MODEL_CALL_TIMEOUT_MS`) — the platform terminates webhook requests after ~10s wall-clock on the free plan, so a 45s abort would let a slow-but-alive model kill the whole message. 8s hands slow models (3.6-flash / 2.5-pro on free tier) off to the next model instead. Note: a slow *preferred* model leaves <2s for its fallback — upgrading the plan (30s+ wall clock) or the `waitUntil` decoupling removes that squeeze.
+**Provider timeouts:** 8s fast-fail per model call (`MODEL_CALL_TIMEOUT_MS`). The webhook ACKs Telegram instantly and runs the AI loop in `ctx.waitUntil()`, which extends execution up to 30s after the response — the free-plan platform otherwise terminates webhook requests at ~10s wall-clock, which killed multi-turn tool flows (side effects ran, reply lost). The 8s fast-fail keeps slow models (3.6-flash / 2.5-pro on free tier) from monopolizing the 30s budget: each handoff burns ≤8s, so a 2-3 turn tool loop fits comfortably.
 
 ### Blog Writer (CrewAI) — Gemini only
 ```
@@ -225,6 +226,12 @@ CREATE TABLE knowledge (
   PRIMARY KEY (chat_id, subject, predicate, object)
 );
 CREATE INDEX idx_knowledge_subject ON knowledge(chat_id, subject);
+
+-- Cross-isolate webhook dedup (INSERT OR IGNORE on every update)
+CREATE TABLE dedup (
+  update_id INTEGER PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
 ```
 
 **History cap:** system prompt + 9 most recent user/assistant turns.
@@ -252,7 +259,7 @@ Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for
 | Tool | Description |
 |------|-------------|
 | `search_web(query)` | Tavily search (`include_answer: true`), summary + 5 results |
-| `fetch_url(url)` | Fetch URL content (first ~15K chars, 20s timeout, content-type check) |
+| `fetch_url(url)` | Fetch URL content (first ~15K chars, 8s timeout, content-type check) |
 
 ### ⏱️ Jobs (self-service cron: recurring reminders + keyword alerts + page watches)
 | Tool | Description |
@@ -525,7 +532,7 @@ DISCORD_APP_ID = "1521363304579338330"
 DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8ffcd22b"
 ```
 
-> KV is declared but **not actively used** — Telegram session adapter uses an in-memory Map (10s TTL) to save KV quota. D1 is the primary store.
+> KV is declared but **not actively used**. D1 is the primary store: sessions, memories, reminders, jobs, knowledge graph, and the cross-isolate webhook dedup table.
 
 ---
 
@@ -538,5 +545,5 @@ DISCORD_PUBLIC_KEY = "ccf47e87e294ed5440b46b2dc3c10ab1ba3a6c121627f46e2a666bce8f
 | **Session history** | D1 via `d1SessionAdapter()`, last ~10 messages (system + 9 recent) |
 | **Reminders** | D1-backed, `* * * * *` cron |
 | **Tool loop** | Max 5 turns per message |
-| **Message dedup** | In-memory Map, `update_id`, 10s TTL, max 100 entries |
+| **Message dedup** | `dedup` D1 table (`INSERT OR IGNORE`, atomic cross-isolate) + in-memory Map fast path; rows pruned hourly by cron |
 | **Tests** | `tests/` dir exists but empty |

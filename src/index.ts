@@ -1,11 +1,38 @@
 import { Hono } from "hono";
-import { Bot, Context, InlineKeyboard, session, StorageAdapter, webhookCallback } from "grammy";
+import { Bot, Context, InlineKeyboard, session, StorageAdapter } from "grammy";
 import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge } from "./ai";
 import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
-// In-memory dedup for webhook update IDs (replaces KV to save quota)
+// In-memory dedup for webhook update IDs — fast path only. The authoritative
+// dedup is the D1 `dedup` table (INSERT OR IGNORE), because the in-memory Map
+// lives per-isolate and leaked duplicates when Cloudflare routed retries to a
+// different isolate.
 const recentUpdates = new Map<number, number>();
 const DEDUP_TTL_MS = 10_000;
+
+// Per-chat serialization: consecutive updates from one chat run one at a time
+// (in-isolate) so the D1 session read-modify-write in grammY's session plugin
+// never races. Webhook processing is decoupled via waitUntil, so without this
+// queue a burst of messages would overwrite each other's history writes.
+const chatQueues = new Map<string, Promise<void>>();
+function serializeChat(chatKey: string, task: () => Promise<void>): Promise<void> {
+  const prev = chatQueues.get(chatKey) ?? Promise.resolve();
+  const run = prev.catch(() => {}).then(task);
+  chatQueues.set(chatKey, run);
+  run
+    .finally(() => {
+      if (chatQueues.get(chatKey) === run) chatQueues.delete(chatKey);
+    })
+    .catch(() => {});
+  return run;
+}
+
+function extractChatKey(update: any): string {
+  const msg = update?.message || update?.edited_message || update?.channel_post || update?.callback_query?.message;
+  if (msg?.chat?.id) return String(msg.chat.id);
+  if (update?.inline_query?.from?.id) return String(update.inline_query.from.id);
+  return "global";
+}
 
 interface Env {
   TELEGRAM_BOT_TOKEN: string;
@@ -1370,6 +1397,7 @@ app.get("/init", async (c) => {
     "CREATE INDEX IF NOT EXISTS idx_jobs_chat ON jobs(chat_id)",
     "CREATE TABLE IF NOT EXISTS knowledge (chat_id TEXT NOT NULL, subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, source TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (chat_id, subject, predicate, object))",
     "CREATE INDEX IF NOT EXISTS idx_knowledge_subject ON knowledge(chat_id, subject)",
+    "CREATE TABLE IF NOT EXISTS dedup (update_id INTEGER PRIMARY KEY, created_at INTEGER NOT NULL)",
   ];
   try {
     for (const stmt of statements) {
@@ -1519,12 +1547,15 @@ app.all("*", async (c) => {
     return c.text("Bot running. Send POST for webhook.");
   }
 
-  // Dedup: skip duplicate Telegram webhook retries (in-memory to save KV quota)
+  // Dedup: in-memory fast path + D1 authoritative check. The D1 INSERT OR IGNORE
+  // is atomic at the primary, so it catches duplicate retries even when they
+  // land on a different isolate (the old in-memory-only Map leaked those).
   const raw = await c.req.raw.clone().text();
   let updateId: number | null = null;
+  let update: any = null;
   try {
-    const parsed = JSON.parse(raw);
-    updateId = parsed?.update_id ?? null;
+    update = JSON.parse(raw);
+    updateId = update?.update_id ?? null;
   } catch {}
   if (updateId !== null) {
     if (recentUpdates.has(updateId)) {
@@ -1537,11 +1568,35 @@ app.all("*", async (c) => {
         if (now - ts > DEDUP_TTL_MS) recentUpdates.delete(id);
       }
     }
+    try {
+      const ins = await c.env.IVY_DB.prepare(
+        "INSERT OR IGNORE INTO dedup (update_id, created_at) VALUES (?, ?)"
+      ).bind(updateId, Date.now()).run();
+      if ((ins.meta.changes ?? 0) === 0) {
+        // Already processed by another isolate — Telegram retry, drop it.
+        return c.text("OK", 200);
+      }
+    } catch (e) {
+      // Dedup DB hiccup — process anyway rather than swallow user messages.
+      console.error("Dedup D1 error:", e);
+    }
   }
 
+  // Decouple processing from the webhook response: ACK Telegram immediately and
+  // run the AI loop in waitUntil. The free-plan platform terminates webhook
+  // requests after ~10s wall-clock, which killed multi-turn tool flows (the
+  // side effects ran but the reply was lost). waitUntil extends execution up
+  // to 30s after the response, so 2-3 turn tool loops now fit comfortably.
   const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
   setupBot(bot, c.env);
-  return webhookCallback(bot, "hono")(c);
+  const chatKey = extractChatKey(update);
+  c.executionCtx.waitUntil(
+    serializeChat(chatKey, async () => {
+      await bot.init();
+      await bot.handleUpdate(update);
+    }).catch((e) => console.error("Webhook processing error:", e))
+  );
+  return c.text("OK", 200);
 });
 
 app.onError((err, c) => {
@@ -1551,6 +1606,13 @@ app.onError((err, c) => {
 
 // ---------- Cron: Fire due reminders + recurring jobs ----------
 async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+  // Prune the cross-isolate dedup table (rows are kept ~1h; Telegram update_ids
+  // are monotonic so anything older than the TTL can never repeat).
+  try {
+    await env.IVY_DB.prepare("DELETE FROM dedup WHERE created_at < ?").bind(Date.now() - 3_600_000).run();
+  } catch (e) {
+    console.error("Dedup prune error:", e);
+  }
   await processDueJobs(env);
 }
 
