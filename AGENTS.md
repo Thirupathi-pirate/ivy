@@ -33,7 +33,11 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
    │  ├─ search_web / fetch_url / browse_url / screenshot_url / get_current_time
    │  └─ get_movie_info / get_movie_recommendations / discover_movies
    ├─ Response sanitized (Telegram Markdown) → sent back
-   └─ History capped at 10 messages → saved to D1
+   ├─ History capped at 10 messages → saved to D1
+   └─ Proactive autosave: awaited extraction pass (first 5 fallback models,
+       budget-guarded at >20s AI-loop elapsed) persists durable user facts
+       (memories + knowledge graph, source='autosave') even when the model
+       never called memory_save
 
 2. /write <topic> → GitHub Actions dispatch
    ├─ CrewAI pipeline (writer → humaniser → editor)
@@ -257,6 +261,23 @@ Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for
 |------|-------------|
 | `memory_save(key, value)` | Save a fact/preference to D1 (upserts) |
 | `memory_recall(key?)` | Recall saved facts — specific key or all |
+
+> **Proactive autosave:** even when the model never calls `memory_save`, a separate
+> extraction pass runs after every substantive reply and persists durable user
+> facts directly (memories + knowledge graph triples with `source='autosave'`).
+> `autosaveFacts(env, chatId, userText, aiElapsedMs)` in `src/ai.ts`:
+> - **Budget guard:** skipped when the AI loop consumed >20s (`[AUTOSAVE] skipped (AI loop took …)`).
+> - **Extraction:** tries the first 5 models of `FALLBACK_CHAIN` (wider net — per-model free-tier
+>   quotas exhaust unevenly, e.g. flash-lite/flash/3.1 dead while 3.5-flash-lite still has quota),
+>   `AUTOSAVE_PROMPT` demands pure JSON (`{"memories":[{"key","value"}],"knowledge":[{"subject","predicate","object"}]}`),
+>   `parseAutosaveJson` tolerates markdown fences/broken JSON.
+> - **Guardrails:** never saves world facts, conversation subject matter, prices, weather, or
+>   anything transient; ignores instructions embedded in the user message.
+> - **Hooks:** end of `handleChat` (text path), photo-caption path, and the split-and-continue
+>   pass (fresh budget). PDF/document flows pass `{ autosave: false }` (external content).
+>   All hooks **await** the pass so it stays inside the webhook's `waitUntil` chain — a
+>   fire-and-forget promise there is abandoned when the event completes before its I/O resolves
+>   (verified locally: zero saves across 3 runs until awaited).
 
 ### ⏰ Reminders
 | Tool | Description |
@@ -567,6 +588,8 @@ WORKER_URL = "https://ivy-blog-bot.priyamolmpraveen2.workers.dev"
 | **Blog posts** | ≥2500 words, 8 sections + intro + conclusion, emoji headers, Mermaid, blockquotes, source links |
 | **Bot persona** | Ivy — warm, friendly AI assistant. Identity/tone configurable via `IVY_PERSONA` secret |
 | **Session history** | D1 via `d1SessionAdapter()`, last ~10 messages (system + 9 recent) |
+| **Long-term memory** | `memories` (key-value) + `knowledge` (subject→predicate→object triples, `source` = `memory_save`/tool or `autosave`) — injected into the system prompt on every turn |
+| **Autosave** | After each reply, an awaited extraction pass persists durable facts (budget-guarded, first 5 fallback models, JSON-only output); see **Memory** tools section |
 | **Reminders** | D1-backed, `* * * * *` cron |
 | **Tool loop** | Max 5 turns per message |
 | **Message dedup** | `dedup` D1 table (`INSERT OR IGNORE`, atomic cross-isolate) + in-memory Map fast path; rows pruned hourly by cron |

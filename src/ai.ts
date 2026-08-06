@@ -1826,9 +1826,7 @@ function getTools(env: Env) {
 async function handleFunctionCall(
   env: Env,
   chatId: string,
-  toolCall: GroqToolCall,
-  /** Remaining waitUntil budget in ms (optional) — lets heavy tools fail fast when tight. */
-  budgetLeftMs?: number
+  toolCall: GroqToolCall
 ): Promise<string> {
   console.log(`[TOOL] ${toolCall.function.name} :: ${(toolCall.function.arguments || "").slice(0, 140)}`);
   // Never let malformed/empty tool arguments crash the whole reply.
@@ -1960,16 +1958,14 @@ async function handleFunctionCall(
     case "fetch_url":
       return await fetchUrl(args.url);
     case "browse_url":
-      // Browser render needs launch + goto + extract — fail fast when the
-      // remaining budget can't cover it so the model falls back to fetch_url.
-      if (budgetLeftMs !== undefined && budgetLeftMs < MIN_BROWSER_BUDGET_MS) {
-        return "⏳ Not enough time left in this request to render a full browser page. Use fetch_url instead (it's fast) or give a short answer.";
-      }
+      // No browser-specific budget gate: the loop's uniform per-tool check
+      // (MIN_TOOL_BUDGET_MS) already prevents starting ANY tool with too little
+      // budget left, and if the post-tool model call can't fit, split-and-
+      // continue checkpoints and resumes on a fresh budget. A stricter gate here
+      // made browse_url/screenshot_url dead code in practice (the chain usually
+      // burns 2-7s on rate-limited first models, leaving <20s of the 22s budget).
       return await browseUrl(env, args.url, args.selector);
     case "screenshot_url":
-      if (budgetLeftMs !== undefined && budgetLeftMs < MIN_BROWSER_BUDGET_MS) {
-        return "⏳ Not enough time left in this request to take a screenshot. Use fetch_url instead (it's fast) or give a short answer.";
-      }
       return await screenshotUrl(env, chatId, args.url);
     case "get_current_time":
       return getCurrentTime(args.timezone);
@@ -2085,7 +2081,9 @@ const TOOL_CALL_TIMEOUT_MS = 8000;
 // (a short note instead of a cancelled reply):
 const AI_DEADLINE_MS = 22_000;        // hard stop — leaves 8s for the reply path + margin under the 30s cap
 const MIN_MODEL_BUDGET_MS = 9_000;    // a final model call needs at least this much left
-const MIN_BROWSER_BUDGET_MS = 20_000; // launch + render + sendPhoto need this much left
+// No separate browser gate: MIN_TOOL_BUDGET_MS below uniformly covers every
+// tool (incl. browser launch/render), and split-and-continue resumes when the
+// post-tool model call doesn't fit. See the browse_url/screenshot_url cases.
 const MIN_TOOL_BUDGET_MS = 12_000;    // per-tool split: don't start a tool with less left
 
 // ── Split-and-continue ────────────────────────────────────────────────────
@@ -2569,7 +2567,7 @@ async function processAiInternal(
             console.warn(`[MODEL] budget tight (${budgetLeft()}ms) before JSON tool call, splitting`);
             break;
           }
-          const result = await handleFunctionCall(env, chatId, jsonToolCall, budgetLeft());
+          const result = await handleFunctionCall(env, chatId, jsonToolCall);
           currentMessages.push({ role: "assistant", content: content.replace(jsonToolCall.raw, "").trim() });
           currentMessages.push({ role: "tool", content: result, tool_call_id: jsonToolCall.id, name: jsonToolCall.function.name });
           continue;
@@ -2598,7 +2596,7 @@ async function processAiInternal(
           assistantTcs.push(...executedTcs);
           break;
         }
-        const result = await handleFunctionCall(env, chatId, tc, budgetLeft());
+        const result = await handleFunctionCall(env, chatId, tc);
         executedTcs.push(tc);
         currentMessages.push({ role: "tool", content: result, tool_call_id: tc.id, name: tc.function.name });
       }
