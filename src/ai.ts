@@ -1611,6 +1611,11 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
     args = {};
   }
   if (typeof args !== "object" || args === null) args = {};
+  // Any thrown tool error must become a tool RESULT (not an exception): the
+  // conversation stays valid for every fallback model down the chain. An
+  // uncaught throw here would leave an assistant tool_calls message without a
+  // matching tool result, which is an invalid API request that 400s all models.
+  try {
   switch (toolCall.function.name) {
     case "create_reminder": {
       const result = await createReminder(env.IVY_DB, chatId, args.time, args.message, args.timezone);
@@ -1802,19 +1807,25 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
     default:
       return `Unknown tool: ${toolCall.function.name}`;
   }
+  } catch (e: any) {
+    console.error(`Tool ${toolCall.function.name} failed:`, e);
+    return JSON.stringify({ status: "error", message: `Tool ${toolCall.function.name} failed: ${e?.message || e}` });
+  }
 }
 
 // ===================== Groq API Call =====================
 
 const MODEL_MAX_TOKENS: Record<string, number> = {
   // Groq free tier charges input + reserved max_tokens against a tiny daily
-  // bucket (llama-3.3 = 100K TPD). At 8192 a single request burns ~10K tokens
-  // (~10 messages/day). Cap output at 2048 — bot replies rarely exceed that —
-  // and the bucket lasts ~2-3x longer before the chain falls through to Gemini.
-  "llama-3.3-70b-versatile": 2048,
-  "llama-3.1-8b-instant": 2048,
-  "openai/gpt-oss-20b": 2048,
-  "openai/gpt-oss-120b": 2048,
+  // bucket (llama-3.3 = 100K TPD), so 8192 burns ~10K tokens per request
+  // (~10 messages/day before the bucket dies and the chain falls through to
+  // Gemini). The 8K ceiling stays because long replies (movie breakdowns,
+  // multi-section answers) truncate below it — daily capacity is the cheaper
+  // loss than a cut-off reply. The 429 body logs the bucket numbers.
+  "llama-3.3-70b-versatile": 8192,
+  "llama-3.1-8b-instant": 8192,
+  "openai/gpt-oss-20b": 8192,
+  "openai/gpt-oss-120b": 8192,
 };
 
 // Webhook processing runs in ctx.waitUntil (30s budget after the instant ACK).
