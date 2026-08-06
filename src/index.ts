@@ -135,9 +135,15 @@ function getSystemPrompt(opts: {
 const MODEL_LABELS: Record<string, string> = {
   "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
   "gemini-2.5-flash": "Gemini 2.5 Flash",
+  "gemini-2.5-pro": "Gemini 2.5 Pro",
   "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+  "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
+  "gemini-3.5-flash": "Gemini 3.5 Flash",
+  "gemini-3.6-flash": "Gemini 3.6 Flash",
+  "openai/gpt-oss-120b": "GPT-OSS 120B (Groq)",
+  "openai/gpt-oss-20b": "GPT-OSS 20B (Groq)",
   "llama-3.3-70b-versatile": "Llama 3.3 70B (Groq)",
-  "meta-llama/llama-4-scout-17b-16e-instruct": "Llama 4 Scout (Groq)",
+  "llama-3.1-8b-instant": "Llama 3.1 8B (Groq)",
 };
 const modelLabel = (m: string): string => MODEL_LABELS[m] || m;
 
@@ -1108,8 +1114,14 @@ const DISCORD_COMMANDS = [
         { name: "Gemini 2.5 Flash Lite", value: "gemini-2.5-flash-lite" },
         { name: "Gemini 2.5 Flash", value: "gemini-2.5-flash" },
         { name: "Gemini 3.1 Flash Lite", value: "gemini-3.1-flash-lite" },
+        { name: "Gemini 3.5 Flash Lite", value: "gemini-3.5-flash-lite" },
+        { name: "Gemini 3.5 Flash", value: "gemini-3.5-flash" },
+        { name: "Gemini 3.6 Flash", value: "gemini-3.6-flash" },
+        { name: "Gemini 2.5 Pro", value: "gemini-2.5-pro" },
+        { name: "GPT-OSS 120B (Groq)", value: "openai/gpt-oss-120b" },
         { name: "Llama 3.3 70B (Groq)", value: "llama-3.3-70b-versatile" },
-        { name: "Llama 4 Scout (Groq)", value: "meta-llama/llama-4-scout-17b-16e-instruct" },
+        { name: "GPT-OSS 20B (Groq)", value: "openai/gpt-oss-20b" },
+        { name: "Llama 3.1 8B (Groq)", value: "llama-3.1-8b-instant" },
       ],
     }],
   },

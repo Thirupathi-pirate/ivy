@@ -139,18 +139,27 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 
 ## ⚡ Model Chain
 
-### Bot — Gemini primary, Groq fallback (4-model chain)
+### Bot — Gemini primary, Groq fallback (11-model chain)
 ```
-gemini-2.5-flash-lite         (preferred — 30 RPM / 1,500 RPD / 1M TPM)
+gemini-2.5-flash-lite         (preferred — fast/cheap, biggest free quota)
   → gemini-2.5-flash           (fallback 1)
   → gemini-3.1-flash-lite      (fallback 2)
-  → llama-3.3-70b-versatile    (Groq — fallback 3)
+  → gemini-3.5-flash-lite      (fallback 3)
+  → gemini-3.5-flash           (fallback 4)
+  → gemini-3.6-flash           (fallback 5 — slow on free tier, often hands off)
+  → gemini-2.5-pro             (fallback 6 — slow on free tier, often hands off)
+  → openai/gpt-oss-120b        (Groq — fallback 7, best Groq quality)
+  → llama-3.3-70b-versatile    (Groq — fallback 8, proven workhorse)
+  → openai/gpt-oss-20b         (Groq — fallback 9)
+  → llama-3.1-8b-instant       (Groq — fallback 10, fastest/cheapest last resort)
 ```
 - **Provider routing:** models starting with `gemini-` use `GEMINI_API_KEY` + `callGemini`; all others use `GROQ_API_KEY` + `callGroq` (OpenAI-compatible, tool support via `tool_choice: "auto"`).
+- **Per-model free-tier quota:** Gemini free tier caps each model's requests per day per project (e.g. `gemini-2.5-flash` ≈ 20/day). More models in the chain = more daily buckets = more total capacity before hitting Groq.
+- **Groq free tier:** 30 RPM per model; llama-3.3-70b 1K RPD / 12K TPM (best chat fit — heavy system prompt eats TPM fast), gpt-oss-* 1K RPD / 8K TPM, llama-3.1-8b 14.4K RPD / 6K TPM. 429s fall through silently to the next model.
 - **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`).
 - **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
-**Rate limiting:** Detects 429, 503, Gemini error codes. If all 4 models exhausted → *"I'm rate-limited across all models"*.
-**Provider timeouts:** 45s AbortController per API call, kept armed through the response body read (a slow/hung body falls through to the next model instead of hanging the message).
+**Rate limiting:** Detects 429, 503, Gemini error codes. If all 11 models exhausted → *"I'm rate-limited across all models"*.
+**Provider timeouts:** 8s fast-fail per model call (`MODEL_CALL_TIMEOUT_MS`) — the platform terminates webhook requests after ~10s wall-clock on the free plan, so a 45s abort would let a slow-but-alive model kill the whole message. 8s hands slow models (3.6-flash / 2.5-pro on free tier) off to the next model instead. Note: a slow *preferred* model leaves <2s for its fallback — upgrading the plan (30s+ wall clock) or the `waitUntil` decoupling removes that squeeze.
 
 ### Blog Writer (CrewAI) — Gemini only
 ```

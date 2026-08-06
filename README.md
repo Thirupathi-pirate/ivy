@@ -44,7 +44,7 @@ Ivy is a Telegram bot that chats like a friend, remembers everything, and writes
                     │                                      │
                     │  ┌──────────────────────────────────┐ │
                     │  │     Gemini + Groq fallback        │ │
-                    │  │   (4-model chain, 45s timeouts)   │ │
+                    │  │  (11-model chain, 8s timeouts)    │ │
                     │  └──────┬───────────────────────────┘ │
                     │         │                             │
                     │  ┌──────▼──────────┐  ┌────────────┐ │
@@ -168,7 +168,7 @@ A `repair-posts.yml` cron (every 6h) scans `_posts/` for LLM-leak / truncation i
 
 ```
 ┌─ Bot Runtime ──── Cloudflare Workers (Hono + grammY)
-├─ AI Chat ──────── Gemini (gemini-2.5-flash-lite → gemini-2.5-flash → gemini-3.1-flash-lite) + Groq llama-3.3 fallback
+├─ AI Chat ──────── Gemini (flash-lite → flash → 3.1-lite → 3.5-lite → 3.5-flash → 3.6-flash → 2.5-pro) + Groq (gpt-oss-120b → llama-3.3 → gpt-oss-20b → llama-3.1-8b)
 ├─ Voice ────────── Groq Whisper (whisper-large-v3-turbo)
 ├─ Web Search ───── Tavily API
 ├─ Database ─────── Cloudflare D1 (SQLite) — sessions, memories, reminders, jobs, knowledge

@@ -2,12 +2,22 @@ const GROQ_API = "https://api.groq.com/openai/v1";
 import { escapeHtml, mdToTelegramHtml } from "./markdown";
 
 export const MODELS = [
-  // Gemini (primary chat provider)
+  // Gemini (primary chat provider) — ordered cheap/fast first, stronger later.
+  // Each model has its own free-tier daily quota bucket, so more models = more
+  // total daily capacity before the fallback chain hits the Groq last resort.
   "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
   "gemini-3.1-flash-lite",
-  // Groq (chat fallback + user-selectable)
+  "gemini-3.5-flash-lite",
+  "gemini-3.5-flash",
+  "gemini-3.6-flash",
+  "gemini-2.5-pro",
+  // Groq (chat fallback + user-selectable) — fast free-tier chat; kept after
+  // Gemini as provider-diverse last resorts. Order: quality first, speed last.
+  "openai/gpt-oss-120b",
   "llama-3.3-70b-versatile",
+  "openai/gpt-oss-20b",
+  "llama-3.1-8b-instant",
 ];
 
 const FALLBACK_CHAIN = [...MODELS];
@@ -15,15 +25,21 @@ const FALLBACK_CHAIN = [...MODELS];
 const GEMINI_MODEL_MAP: Record<string, string> = {
   "gemini-2.5-flash": "gemini-2.5-flash",
   "gemini-2.5-flash-lite": "gemini-2.5-flash-lite",
+  "gemini-2.5-pro": "gemini-2.5-pro",
   "gemini-3.1-flash-lite": "gemini-3.1-flash-lite",
   "gemini-3.5-flash": "gemini-3.5-flash",
+  "gemini-3.5-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3.6-flash": "gemini-3.6-flash",
 };
 
 const GEMINI_MAX_TOKENS: Record<string, number> = {
   "gemini-2.5-flash": 65536,
   "gemini-2.5-flash-lite": 65536,
+  "gemini-2.5-pro": 65536,
   "gemini-3.1-flash-lite": 65536,
   "gemini-3.5-flash": 65536,
+  "gemini-3.5-flash-lite": 65536,
+  "gemini-3.6-flash": 65536,
 };
 
 interface Env {
@@ -1786,10 +1802,17 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
 
 const MODEL_MAX_TOKENS: Record<string, number> = {
   // Groq caps output at 8192 tokens — keep all Groq models at the limit
-  "meta-llama/llama-4-scout-17b-16e-instruct": 8192,
   "llama-3.3-70b-versatile": 8192,
   "llama-3.1-8b-instant": 8192,
+  "openai/gpt-oss-20b": 8192,
+  "openai/gpt-oss-120b": 8192,
 };
+
+// The platform terminates webhook requests after ~10s wall-clock (free plan).
+// A 45s abort never fires on that path — a slow-but-alive model would kill the
+// whole message instead of falling through the chain. Fast-fail at 8s so slow
+// models (e.g. gemini-3.6-flash on free tier) hand off to the next model.
+const MODEL_CALL_TIMEOUT_MS = 8000;
 
 async function callGroq(
   apiKey: string,
@@ -1808,7 +1831,7 @@ async function callGroq(
     body.tool_choice = "auto";
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), MODEL_CALL_TIMEOUT_MS);
   let resp: Response;
   try {
     resp = await fetch(`${GROQ_API}/chat/completions`, {
@@ -1829,8 +1852,8 @@ async function callGroq(
     return { _rateLimited: true, model };
   }
   if (!resp.ok) {
-    // Body read stays under the 45s abort signal (don't clearTimeout early —
-    // a hung body read would otherwise hang the message forever).
+    // Body read stays under the MODEL_CALL_TIMEOUT_MS abort signal (don't
+    // clearTimeout early — a hung body read would otherwise hang the message).
     const err = await resp.text();
     clearTimeout(timeout);
     if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) return { _retry: true };
@@ -1966,7 +1989,7 @@ async function callGemini(
   if (geminiTools.length) body.tools = geminiTools;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), MODEL_CALL_TIMEOUT_MS);
   let resp: Response;
   try {
     resp = await fetch(`${GEMINI_API_BASE}/models/${apiModel}:generateContent?key=${apiKey}`, {
@@ -1988,8 +2011,8 @@ async function callGemini(
     return { _rateLimited: true, model };
   }
   if (!resp.ok) {
-    // Body read stays under the 45s abort signal (don't clearTimeout early —
-    // a hung body read would otherwise hang the message forever).
+    // Body read stays under the MODEL_CALL_TIMEOUT_MS abort signal (don't
+    // clearTimeout early — a hung body read would otherwise hang the message).
     const err = await resp.text();
     clearTimeout(timeout);
     if (resp.status === 400 && err.includes("not supported")) {
@@ -2169,7 +2192,7 @@ async function processAiInternal(
 
   const isGemini = (m: string) => m.startsWith("gemini-");
   // Gemini models + Llama 4 Scout accept images; Llama 3.3/3.1 on Groq are text-only.
-  const isVisionModel = (m: string) => isGemini(m) || m === "meta-llama/llama-4-scout-17b-16e-instruct";
+  const isVisionModel = (m: string) => isGemini(m);
   const hasImages = messages.some(
     (m) => Array.isArray(m.content) && m.content.some((p: any) => p?.type === "image_url")
   );
