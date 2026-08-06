@@ -8,7 +8,6 @@ export const MODELS = [
   "gemini-3.1-flash-lite",
   // Groq (chat fallback + user-selectable)
   "llama-3.3-70b-versatile",
-  "meta-llama/llama-4-scout-17b-16e-instruct",
 ];
 
 const FALLBACK_CHAIN = [...MODELS];
@@ -2109,6 +2108,7 @@ function extractJsonToolCall(text: string): GroqToolCall & { raw: string } | nul
 const TOOL_KEYWORDS = [
   "remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in",
   "weather", "forecast", "temperature", "rain", "youtube", "video transcript", "summarize this video", "summarize the video",
+  "http",
   "every day", "every week", "every monday", "every tuesday", "every wednesday", "every thursday", "every friday", "every saturday", "every sunday",
   "every hour", "every 2 hours", "daily", "weekly", "weekdays", "weekends",
   "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
