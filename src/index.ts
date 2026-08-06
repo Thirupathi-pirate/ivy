@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge, loadContinuation, deleteContinuation, clearContinuations, CONTINUE_PREFIX, MAX_CONTINUE_PASSES, type ContinuationRow } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge, loadContinuation, deleteContinuation, clearContinuations, CONTINUE_PREFIX, MAX_CONTINUE_PASSES, type ContinuationRow, autosaveFacts } from "./ai";
 import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
 // In-memory dedup for webhook update IDs — fast path only. The authoritative
@@ -416,6 +416,7 @@ function countToolResults(dataJson: string): number {
 async function runContinuationPass(env: Env, id: string): Promise<void> {
   try {
     console.warn(`[SPLIT] continuation pass started: ${id}`);
+    const passStart = Date.now();
     const rec = await loadContinuation(env.IVY_DB, id);
     if (!rec) return; // already finished or cleaned up
     if (rec.attempts > MAX_CONTINUE_PASSES) {
@@ -442,6 +443,14 @@ async function runContinuationPass(env: Env, id: string): Promise<void> {
       await appendAssistantToHistory(env.IVY_DB, rec.chat_id, result.text);
       await deleteContinuation(env.IVY_DB, id);
       console.warn(`[SPLIT] continuation pass finished: ${id}`);
+      // Autosave with the fresh pass budget: the original request may have hit
+      // the deadline mid-loop, so this is the reliable place to persist facts.
+      const lastUser = [...data.messages].reverse().find((m: any) => m.role === "user");
+      const userText = lastUser && typeof lastUser.content === "string" ? lastUser.content : "";
+      if (userText) {
+        // Awaited (not fire-and-forget) so it stays inside this pass's waitUntil.
+        await autosaveFacts(env, rec.chat_id, userText, Date.now() - passStart);
+      }
     }
   } catch (e: any) {
     console.error("Continuation pass error:", e);
@@ -1006,6 +1015,9 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         ] as any,
       });
 
+      // Track AI-loop duration so the photo autosave pass can skip when the
+      // waitUntil budget is nearly exhausted.
+      const photoAiStart = Date.now();
       const result = await processAiStream(
         env,
         history,
@@ -1050,6 +1062,11 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
           await sendFormatted(ctx, ctx.chat.id, placeholder, result.text);
           // Store raw text (not sanitized) so escapes don't compound in history
           history.push({ role: "assistant", content: result.text });
+          // Proactive autosave from the photo caption (awaited so it stays inside
+          // the waitUntil chain; skipped when the AI loop consumed the budget).
+          // The default "Describe this image" caption carries no facts, so it's
+          // a no-op in practice.
+          await autosaveFacts(env, String(ctx.chat.id), caption, Date.now() - photoAiStart);
         }
       }
 
@@ -1134,7 +1151,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
           { parse_mode: "HTML" }
         );
 
-        await handleChat(ctx, env, `The user uploaded a PDF file "${fileName}". Here is its content:\n\n${pdfText}`);
+        await handleChat(ctx, env, `The user uploaded a PDF file "${fileName}". Here is its content:\n\n${pdfText}`, { autosave: false });
       } catch (e: any) {
         await ctx.api.editMessageText(chatId, placeholder.message_id, `Error reading PDF: ${e.message}`);
       }
@@ -1156,7 +1173,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
           { parse_mode: "HTML" }
         );
 
-        await handleChat(ctx, env, `The user uploaded a file "${fileName}". Here is its content:\n\n${truncated}`);
+        await handleChat(ctx, env, `The user uploaded a file "${fileName}". Here is its content:\n\n${truncated}`, { autosave: false });
       } catch (e: any) {
         await ctx.api.editMessageText(chatId, placeholder.message_id, `Error reading document: ${e.message}`);
       }
@@ -1171,7 +1188,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.catch((err) => console.error("Bot error:", err.error));
 }
 
-async function handleChat(ctx: MyContext, env: Env, text: string) {
+async function handleChat(ctx: MyContext, env: Env, text: string, opts?: { autosave?: boolean }) {
   const chatId = ctx.chat?.id;
   if (!chatId) return;
   const chatIdStr = String(chatId);
@@ -1218,6 +1235,9 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   history.push({ role: "user", content: cleanText });
 
   let result: { text: string; modelUsed: string };
+  // Track the AI-loop duration so the autosave pass can skip when the
+  // waitUntil budget is nearly exhausted.
+  const aiStart = Date.now();
 
   try {
     if (placeholderMsg) {
@@ -1282,6 +1302,17 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
     } else {
       ctx.session.history = history.slice(-MAX_HISTORY);
     }
+  }
+
+  // Proactive autosave: extract durable facts from what the user just said and
+  // persist them (memories + knowledge graph) so the bot remembers across
+  // conversations even when the model never called memory_save. AWAITED so it
+  // stays inside the webhook's waitUntil chain — a fire-and-forget promise here
+  // would be abandoned when the event completes before its I/O resolves. The
+  // budget guard inside autosaveFacts keeps this bounded; on split the
+  // continuation pass runs its own autosave with a fresh budget.
+  if (opts?.autosave !== false && result?.text && !result.text.startsWith(CONTINUE_PREFIX) && !result.text.startsWith("Error:")) {
+    await autosaveFacts(env, chatIdStr, text, Date.now() - aiStart);
   }
 }
 
