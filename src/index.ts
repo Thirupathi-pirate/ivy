@@ -364,6 +364,29 @@ async function sendContinuationMsg(env: Env, chatId: string, markdownText: strin
   }
 }
 
+/**
+ * Persist a continuation chain's final conclusion into session history.
+ * The webhook path pushes the user message, but the conclusion arrives via
+ * raw Bot API from a different request — without this the next turn would
+ * see the user message with no assistant reply (lost context).
+ */
+async function appendAssistantToHistory(db: D1Database, chatId: string, text: string): Promise<void> {
+  try {
+    const adapter = d1SessionAdapter(db);
+    const session = (await adapter.read(chatId)) || { history: [], model: MODELS[0] };
+    session.history.push({ role: "assistant", content: text });
+    const { history } = session;
+    if (history.length > MAX_HISTORY) {
+      const sysIdx = history.findIndex((m) => m.role === "system");
+      session.history = sysIdx >= 0 ? [history[sysIdx], ...history.slice(-(MAX_HISTORY - 1))] : history.slice(-MAX_HISTORY);
+    }
+    await adapter.write(chatId, session);
+    console.warn(`[SPLIT] conclusion appended to session history for ${chatId}`);
+  } catch (e) {
+    console.error("appendAssistantToHistory error:", e);
+  }
+}
+
 function countToolResults(dataJson: string): number {
   try {
     const d = JSON.parse(dataJson);
@@ -401,6 +424,9 @@ async function runContinuationPass(env: Env, id: string): Promise<void> {
       if (newId) await fireContinuation(env, newId);
     } else {
       await sendContinuationMsg(env, rec.chat_id, result.text);
+      // Persist the conclusion so the next turn retains the gathered context
+      // (the webhook already pushed the user message before the split).
+      await appendAssistantToHistory(env.IVY_DB, rec.chat_id, result.text);
       await deleteContinuation(env.IVY_DB, id);
       console.warn(`[SPLIT] continuation pass finished: ${id}`);
     }
