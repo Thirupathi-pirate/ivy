@@ -76,6 +76,8 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 | `POST` | `/debug/run` | Process due reminders + jobs inline — same code as the cron (needs `x-admin`) |
 | `POST` | `/debug/jobs-clean` | Delete all jobs rows (needs `x-admin`) |
 | `POST` | `/debug/kg` | Dump knowledge-graph triples (needs `x-admin`) |
+| `POST` | `/internal/continue` | Split-and-continue resume pass — auth: `X-Continue` = SHA-256 hex of bot token; ACKs 202, pass runs in its own `waitUntil` (fresh 30s budget) |
+| `POST` | `/debug/continuations` | List split-and-continue checkpoint rows (needs `x-admin`) |
 
 ---
 
@@ -227,7 +229,19 @@ CREATE TABLE dedup (
   update_id INTEGER PRIMARY KEY,
   created_at INTEGER NOT NULL
 );
+
+-- Split-and-continue checkpoints (requests that exceed the waitUntil budget)
+CREATE TABLE continuations (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT NOT NULL,
+  data TEXT NOT NULL,               -- JSON: { messages: ChatMessage[], model: string }
+  attempts INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_continuations_created_at ON continuations(created_at);
 ```
+
+**Split-and-continue:** when the tool loop hits the deadline (`AI_DEADLINE_MS = 22s`), the gathered state is checkpointed to `continuations` and the reply becomes `__CONTINUE__:<id>`. The webhook then fires `POST /internal/continue` through the **`SELF` service binding** (a plain `fetch()` to the worker's own workers.dev URL is NOT routed back and silently stalls — free-tier isolate deadlock), which resumes with a fresh 30s budget and either finishes (conclusion message) or saves a new checkpoint and chains again (`MAX_CONTINUE_PASSES = 4`). The cron sweep resumes orphaned checkpoints (>5 min old, attempts < 4) inline via `ctx.waitUntil` as a safety net.
 
 **History cap:** system prompt + 9 most recent user/assistant turns.
 
@@ -258,7 +272,7 @@ Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for
 | `browse_url(url, selector?)` | Browser Run Puppeteer: JS-rendered page text (SPAs, dashboards), optional CSS selector. Graceful "not enabled" without the binding |
 | `screenshot_url(url)` | Browser Run Puppeteer: screenshot → `sendPhoto` to chat (fire-and-forget). Graceful "not enabled" without the binding |
 
-> **Browser automation (Cloudflare Browser Run, paid):** `browse_url`/`screenshot_url` run Puppeteer (`@cloudflare/puppeteer` 1.3.0) in a Worker via the `browser` binding. Enable: turn on Browser Run in the dashboard, uncomment the `[browser]` block in `wrangler.toml`, redeploy. Without the binding the tools reply "not enabled" and the model falls back to `fetch_url`. **Chromium only** — Camoufox/Firefox anti-detect forks are NOT supported (that needs a Python sidecar, e.g. `python -m camoufox server` + Playwright). Browser sessions reuse via `keep_alive: 600000`.
+> **Browser automation (Cloudflare Browser Run, paid):** `browse_url`/`screenshot_url` run Puppeteer (`@cloudflare/puppeteer` 1.3.0) in a Worker via the `browser` binding (**currently ACTIVE** in `wrangler.toml`). Without the binding the tools reply "not enabled" and the model falls back to `fetch_url`. **Chromium only** — Camoufox/Firefox anti-detect forks are NOT supported (that needs a Python sidecar, e.g. `python -m camoufox server` + Playwright). Browser sessions reuse via `keep_alive: 600000`. Tool timeout is 12s (`BROWSER_TOOL_TIMEOUT_MS`) so a render can't eat the waitUntil budget.
 
 ### ⏱️ Jobs (self-service cron: recurring reminders + keyword alerts + page watches)
 | Tool | Description |
@@ -523,12 +537,25 @@ binding = "IVY_DB"
 database_name = "ivy-blog-bot"
 database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f"
 
+# Browser automation (Cloudflare Browser Run, PAID usage-based)
+[browser]
+binding = "BROWSER"
+
+# Self service binding — the ONLY reliable re-entry into this worker (split-and-continue).
+# A plain fetch() to our own workers.dev route is NOT routed back and silently stalls.
+[[services]]
+binding = "SELF"
+service = "ivy-blog-bot"
+
 [triggers]
 crons = ["* * * * *"]
 
+[vars]
+WORKER_URL = "https://ivy-blog-bot.priyamolmpraveen2.workers.dev"
+
 ```
 
-> KV is declared but **not actively used**. D1 is the primary store: sessions, memories, reminders, jobs, knowledge graph, and the cross-isolate webhook dedup table.
+> KV is declared but **not actively used**. D1 is the primary store: sessions, memories, reminders, jobs, knowledge graph, dedup, and continuations. The `SELF` service binding re-enters the worker for split-and-continue passes (fallback to `WORKER_URL` only if the binding is absent).
 
 ---
 

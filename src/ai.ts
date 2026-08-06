@@ -1694,7 +1694,13 @@ function getTools(env: Env) {
 
 // ===================== Function Call Dispatcher =====================
 
-async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCall): Promise<string> {
+async function handleFunctionCall(
+  env: Env,
+  chatId: string,
+  toolCall: GroqToolCall,
+  /** Remaining waitUntil budget in ms (optional) — lets heavy tools fail fast when tight. */
+  budgetLeftMs?: number
+): Promise<string> {
   console.log(`[TOOL] ${toolCall.function.name} :: ${(toolCall.function.arguments || "").slice(0, 140)}`);
   // Never let malformed/empty tool arguments crash the whole reply.
   let args: any = {};
@@ -1825,8 +1831,16 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
     case "fetch_url":
       return await fetchUrl(args.url);
     case "browse_url":
+      // Browser render needs launch + goto + extract — fail fast when the
+      // remaining budget can't cover it so the model falls back to fetch_url.
+      if (budgetLeftMs !== undefined && budgetLeftMs < MIN_BROWSER_BUDGET_MS) {
+        return "⏳ Not enough time left in this request to render a full browser page. Use fetch_url instead (it's fast) or give a short answer.";
+      }
       return await browseUrl(env, args.url, args.selector);
     case "screenshot_url":
+      if (budgetLeftMs !== undefined && budgetLeftMs < MIN_BROWSER_BUDGET_MS) {
+        return "⏳ Not enough time left in this request to take a screenshot. Use fetch_url instead (it's fast) or give a short answer.";
+      }
       return await screenshotUrl(env, chatId, args.url);
     case "get_current_time":
       return getCurrentTime(args.timezone);
@@ -1935,11 +1949,32 @@ const MODEL_CALL_TIMEOUT_MS = 8000;
 // the reply is sent.
 const TOOL_CALL_TIMEOUT_MS = 8000;
 
+// ── WaitUntil budget guard ────────────────────────────────────────────────
+// The platform cancels waitUntil tasks ~30s after the webhook response, which
+// used to kill AI loops mid-tool-loop (browser render + 3 model handoffs > 30s)
+// → no reply, side effects lost. These constants make the loop stop *gracefully*
+// (a short note instead of a cancelled reply):
+const AI_DEADLINE_MS = 22_000;        // hard stop — leaves 8s for the reply path + margin under the 30s cap
+const MIN_MODEL_BUDGET_MS = 9_000;    // a final model call needs at least this much left
+const MIN_BROWSER_BUDGET_MS = 20_000; // launch + render + sendPhoto need this much left
+const MIN_TOOL_BUDGET_MS = 12_000;    // per-tool split: don't start a tool with less left
+
+// ── Split-and-continue ────────────────────────────────────────────────────
+// When the loop hits the deadline with unfinished tool work, the conversation
+// is checkpointed (continuations table) and the reply becomes a
+// "__CONTINUE__:<id>" marker. The webhook turns that into "splitting into
+// parts…" and self-invokes the worker for a fresh 30s waitUntil budget per
+// pass — each pass either finishes (conclusion message) or saves a new
+// checkpoint and hands off again. Bounded so a pathological request can't loop.
+export const MAX_CONTINUE_PASSES = 4;
+export const CONTINUE_PREFIX = "__CONTINUE__:";
+
 async function callGroq(
   apiKey: string,
   messages: ChatMessage[],
   tools: any[],
-  model: string
+  model: string,
+  timeoutMs: number = MODEL_CALL_TIMEOUT_MS
 ): Promise<
   | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] }; finish_reason: string }> }
   | { _rateLimited: true; model: string }
@@ -1952,7 +1987,7 @@ async function callGroq(
     body.tool_choice = "auto";
   }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MODEL_CALL_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let resp: Response;
   try {
     resp = await fetch(`${GROQ_API}/chat/completions`, {
@@ -2094,7 +2129,8 @@ async function callGemini(
   apiKey: string,
   messages: ChatMessage[],
   tools: any[],
-  model: string
+  model: string,
+  timeoutMs: number = MODEL_CALL_TIMEOUT_MS
 ): Promise<
   | { choices: Array<{ message: { content?: string; tool_calls?: GroqToolCall[] }; finish_reason: string }> }
   | { _rateLimited: true; model: string }
@@ -2114,7 +2150,7 @@ async function callGemini(
   if (geminiTools.length) body.tools = geminiTools;
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MODEL_CALL_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   let resp: Response;
   try {
     resp = await fetch(`${GEMINI_API_BASE}/models/${apiModel}:generateContent?key=${apiKey}`, {
@@ -2313,7 +2349,9 @@ async function processAiInternal(
   chatId: string,
   preferredModel: string | undefined,
   onStream?: StreamCallback,
-  maxDepth = 5
+  maxDepth = 5,
+  /** Pass count of the split-and-continue chain (0 = first/original request). */
+  continuationAttempts = 0
 ): Promise<{ text: string; modelUsed: string }> {
   const tools = needsTools(messages) ? getTools(env) : [];
 
@@ -2328,16 +2366,35 @@ async function processAiInternal(
     ? [preferredModel, ...FALLBACK_CHAIN.filter((m) => m !== preferredModel)]
     : FALLBACK_CHAIN;
 
+  // WaitUntil deadline: stop the tool loop before the platform cancels the
+  // task (cancelled == reply lost). Budget starts at the loop's first model
+  // call — the webhook already ACKed, so we own the full waitUntil window.
+  const startTs = Date.now();
+  const budgetLeft = () => AI_DEADLINE_MS - (Date.now() - startTs);
+  let timedOut = false;
+  // Hoisted so the timeout path can checkpoint whatever was gathered so far.
+  let currentMessages: ChatMessage[] = messages;
+  let activeModel = chain[0];
+
   for (let attempt = 0; attempt < chain.length; attempt++) {
     const model = chain[attempt];
     if (hasImages && !isVisionModel(model)) {
       console.warn(`[${model}] skipping (text-only model, images in conversation)`);
       continue;
     }
-    const currentMessages: ChatMessage[] = JSON.parse(JSON.stringify(messages));
+    currentMessages = JSON.parse(JSON.stringify(messages));
+    activeModel = model;
     let useTools = tools.length > 0;
 
     for (let turn = 0; turn < maxDepth; turn++) {
+      // A prior split already decided to stop — never start another model call.
+      if (timedOut) break;
+      // Hard deadline — bow out gracefully instead of being cancelled mid-flight.
+      if (budgetLeft() < MIN_MODEL_BUDGET_MS) {
+        timedOut = true;
+        console.warn(`[MODEL] time budget exhausted (${budgetLeft()}ms left), stopping loop`);
+        break;
+      }
       const isGeminiModel = isGemini(model);
       const apiKey = isGeminiModel ? env.GEMINI_API_KEY : env.GROQ_API_KEY;
       if (!apiKey) {
@@ -2350,9 +2407,13 @@ async function processAiInternal(
         | Awaited<ReturnType<typeof callGemini>>
         | Awaited<ReturnType<typeof callGroq>>;
       try {
+        // Couple the call timeout to the remaining budget so a model call can
+        // NEVER straddle the waitUntil deadline (a straddling call was the cause
+        // of the platform cancellation in the split4 smoke test).
+        const callBudgetMs = Math.max(1000, Math.min(MODEL_CALL_TIMEOUT_MS, budgetLeft() - 1500));
         response = isGeminiModel
-          ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model)
-          : await callGroq(apiKey, currentMessages, useTools ? tools : [], model);
+          ? await callGemini(apiKey, currentMessages, useTools ? tools : [], model, callBudgetMs)
+          : await callGroq(apiKey, currentMessages, useTools ? tools : [], model, callBudgetMs);
       } catch (e: any) {
         // Model-specific API error (e.g. malformed request) — log and fall
         // through to the next model in the chain instead of killing the message.
@@ -2374,7 +2435,12 @@ async function processAiInternal(
         const content = msg.content || "";
         const jsonToolCall = extractJsonToolCall(content);
         if (jsonToolCall) {
-          const result = await handleFunctionCall(env, chatId, jsonToolCall);
+          if (budgetLeft() < MIN_TOOL_BUDGET_MS) {
+            timedOut = true;
+            console.warn(`[MODEL] budget tight (${budgetLeft()}ms) before JSON tool call, splitting`);
+            break;
+          }
+          const result = await handleFunctionCall(env, chatId, jsonToolCall, budgetLeft());
           currentMessages.push({ role: "assistant", content: content.replace(jsonToolCall.raw, "").trim() });
           currentMessages.push({ role: "tool", content: result, tool_call_id: jsonToolCall.id, name: jsonToolCall.function.name });
           continue;
@@ -2387,12 +2453,44 @@ async function processAiInternal(
         return { text, modelUsed: model };
       }
 
-      currentMessages.push({ role: "assistant", content: msg.content || "", tool_calls: msg.tool_calls.map((tc: GroqToolCall) => ({ ...tc })) });
+      const assistantTcs = msg.tool_calls.map((tc: GroqToolCall) => ({ ...tc }));
+      currentMessages.push({ role: "assistant", content: msg.content || "", tool_calls: assistantTcs });
+      const executedTcs: GroqToolCall[] = [];
       for (const tc of msg.tool_calls) {
-        const result = await handleFunctionCall(env, chatId, tc);
+        // Per-tool split: if the next tool won't fit in the remaining budget,
+        // checkpoint now and resume in a fresh request instead of risking a
+        // platform cancellation mid-call (side effects lost, no reply).
+        if (budgetLeft() < MIN_TOOL_BUDGET_MS) {
+          timedOut = true;
+          console.warn(`[MODEL] budget tight (${budgetLeft()}ms) before tool ${tc.function?.name ?? "?"}, splitting`);
+          // Trim the un-executed calls off the assistant message so the resumed
+          // pass doesn't present phantom tool_calls with no matching results.
+          assistantTcs.length = 0;
+          assistantTcs.push(...executedTcs);
+          break;
+        }
+        const result = await handleFunctionCall(env, chatId, tc, budgetLeft());
+        executedTcs.push(tc);
         currentMessages.push({ role: "tool", content: result, tool_call_id: tc.id, name: tc.function.name });
       }
+      // Exit the turn loop the moment a split fired — don't start another model
+      // call with a truncated budget (that's what got the task cancelled).
+      if (timedOut) break;
     }
+    if (timedOut) break;
+  }
+
+  if (timedOut) {
+    // Split-and-continue: checkpoint the gathered state so the caller can resume
+    // with a fresh waitUntil budget and deliver the answer in parts.
+    const id = await saveContinuation(
+      env.IVY_DB,
+      chatId,
+      { messages: currentMessages, model: activeModel },
+      continuationAttempts + 1
+    );
+    console.warn(`[MODEL] split-and-continue: checkpointed as ${id} (pass ${continuationAttempts + 1}/${MAX_CONTINUE_PASSES})`);
+    return { text: `${CONTINUE_PREFIX}${id}`, modelUsed: "continuation" };
   }
 
   console.warn(`[MODEL] all models exhausted, chain: ${chain.join(" → ")}`);
@@ -2401,13 +2499,53 @@ async function processAiInternal(
 
 // ===================== Public API =====================
 
+export interface ContinuationRow {
+  id: string;
+  chat_id: string;
+  data: string; // JSON: { messages: ChatMessage[], model: string }
+  attempts: number;
+  created_at: number;
+}
+
+/** Checkpoint an in-flight tool loop so a fresh request can resume it. */
+export async function saveContinuation(
+  db: D1Database,
+  chatId: string,
+  data: { messages: ChatMessage[]; model: string },
+  attempts: number
+): Promise<string> {
+  const id = Math.random().toString(36).slice(2, 10);
+  await db
+    .prepare("INSERT INTO continuations (id, chat_id, data, attempts, created_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(id, chatId, JSON.stringify(data), attempts, Date.now())
+    .run();
+  return id;
+}
+
+export async function loadContinuation(db: D1Database, id: string): Promise<ContinuationRow | null> {
+  const row = await db
+    .prepare("SELECT id, chat_id, data, attempts, created_at FROM continuations WHERE id = ?")
+    .bind(id)
+    .first<ContinuationRow>();
+  return row || null;
+}
+
+export async function deleteContinuation(db: D1Database, id: string): Promise<void> {
+  await db.prepare("DELETE FROM continuations WHERE id = ?").bind(id).run();
+}
+
+export async function clearContinuations(db: D1Database, chatId: string): Promise<void> {
+  await db.prepare("DELETE FROM continuations WHERE chat_id = ?").bind(chatId).run();
+}
+
 export async function processAi(
   env: Env,
   history: ChatMessage[],
   chatId: string,
-  preferredModel?: string
+  preferredModel?: string,
+  continuationAttempts = 0
 ): Promise<{ text: string; modelUsed: string }> {
-  return processAiInternal(env, [...history], chatId, preferredModel);
+  return processAiInternal(env, [...history], chatId, preferredModel, undefined, 5, continuationAttempts);
 }
 
 export async function processAiStream(
@@ -2415,9 +2553,10 @@ export async function processAiStream(
   history: ChatMessage[],
   chatId: string,
   onStream: StreamCallback,
-  preferredModel?: string
+  preferredModel?: string,
+  continuationAttempts = 0
 ): Promise<{ text: string; modelUsed: string }> {
-  return processAiInternal(env, [...history], chatId, preferredModel, onStream);
+  return processAiInternal(env, [...history], chatId, preferredModel, onStream, 5, continuationAttempts);
 }
 
 // ===================== Voice Transcription =====================

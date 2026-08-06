@@ -13,15 +13,19 @@ database_name = "ivy-blog-bot"
 database_id = "9d3bfed4-e4af-446c-85aa-0011fcab103f"
 
 # ── Browser automation (Cloudflare Browser Run, PAID usage-based) ──────────
-# browse_url / screenshot_url tools degrade gracefully ("not enabled") until
-# this binding exists. To enable:
-#   1. Enable "Browser Run" on the account (dashboard, usage-based billing)
-#   2. Uncomment the block below and `wrangler deploy`
-# Chromium only — Camoufox/Firefox forks are NOT supported by Browser Run.
-# [browser]
-# binding = "BROWSER"
+[browser]
+binding = "BROWSER"
+
+# ── Self service binding ───────────────────────────────────────────────────
+# The ONLY reliable way to re-enter this worker with a fresh waitUntil budget
+# (split-and-continue). A plain fetch() to our own workers.dev route is not
+# routed back and silently stalls — see fireContinuation() in src/index.ts.
+[[services]]
+binding = "SELF"
+service = "ivy-blog-bot"
 
 [triggers]
 crons = ["* * * * *"]
 
 [vars]
+WORKER_URL = "https://ivy-blog-bot.priyamolmpraveen2.workers.dev"

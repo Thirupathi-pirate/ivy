@@ -33,7 +33,7 @@ export interface ExtractResult {
 }
 
 /** goto/screenshot budget — must fit the 30s waitUntil window next to model calls. */
-export const BROWSER_TOOL_TIMEOUT_MS = 25_000;
+export const BROWSER_TOOL_TIMEOUT_MS = 12_000;
 /** Idle before we drop the cached browser handle and launch a fresh one. */
 const SESSION_IDLE_MS = 300_000;
 /** Screenshot cache TTL in KV (1h — pages go stale). */

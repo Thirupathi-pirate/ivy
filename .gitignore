@@ -14,3 +14,6 @@ CLOUDFLARE_TUNNEL.md
 *.report.html
 scripts/used_topics.json
 .opencode-autopilot/
+
+# Local wrangler cache (state/tmp — never commit)
+.wrangler/

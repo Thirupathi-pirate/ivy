@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { Bot, Context, InlineKeyboard, session, StorageAdapter } from "grammy";
-import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge } from "./ai";
+import { processAi, processAiStream, transcribeAudio, fileToBase64, loadUserMemories, clearUserMemories, isTextDocument, isPdfDocument, extractPdfText, renderLatex, renderMermaid, MODELS, runScheduledJob, computeJobNextRun, type JobRow, fetchUrlContent, getWeather, getYoutubeTranscript, listJobs, buildSchedule, createJob, cancelJob, detectEmotion, kgQuery, kgForget, loadKnowledge, loadContinuation, deleteContinuation, clearContinuations, CONTINUE_PREFIX, MAX_CONTINUE_PASSES, type ContinuationRow } from "./ai";
 import { escapeHtml, stripHtml, safeHtmlPartial, mdToTelegramHtml } from "./markdown";
 
 // In-memory dedup for webhook update IDs — fast path only. The authoritative
@@ -48,6 +48,16 @@ interface Env {
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
   IVY_DB: D1Database;
+  /** Worker origin for split-and-continue self-invocation (falls back to SELF_ORIGIN). */
+  WORKER_URL?: string;
+  /**
+   * Self service binding ([[services]] SELF → ivy-blog-bot). The ONLY reliable
+   * way for this worker to re-enter itself: a plain fetch() to our own
+   * workers.dev route is not routed back and silently stalls (free-tier
+   * isolate deadlock), which is exactly what the webhook reply path and the
+   * cron sweep hit before the binding existed.
+   */
+  SELF?: Fetcher;
   /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
   IVY_PERSONA?: string;
 }
@@ -284,6 +294,121 @@ function d1SessionAdapter(db: D1Database): StorageAdapter<SessionData> {
   };
 }
 
+// ── Split-and-continue ─────────────────────────────────────────────────────
+// A tool loop that outgrows the 30s waitUntil budget is checkpointed (ai.ts
+// returns a "__CONTINUE__:<id>" marker) and resumed here in fresh requests —
+// each pass gets its own 30s budget, sends a "Part k" progress message, and
+// the final pass delivers the conclusion. Self-calls are authenticated with a
+// hash of the bot token (only the worker knows it), so the route can't be
+// triggered externally.
+
+/** Fallback origin for self-invocation (overridable via WORKER_URL var). */
+const SELF_ORIGIN = "https://ivy-blog-bot.priyamolmpraveen2.workers.dev";
+
+async function continueAuth(env: Env): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.TELEGRAM_BOT_TOKEN));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Fire one continuation pass (fire-and-forget — the pass self-chains). */
+async function fireContinuation(env: Env, id: string): Promise<void> {
+  try {
+    const auth = await continueAuth(env);
+    const init: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Continue": auth },
+      body: JSON.stringify({ id }),
+    };
+    let resp: Response;
+    if (env.SELF) {
+      // Service binding: routes straight into this worker (fresh isolate + fresh
+      // 30s waitUntil budget). A plain fetch() to our own workers.dev URL is NOT
+      // routed back and hangs — the free-tier isolate pool can't serve the
+      // self-request while the current isolate awaits it.
+      resp = await env.SELF.fetch("https://self/internal/continue", init);
+    } else {
+      resp = await fetch(`${env.WORKER_URL || SELF_ORIGIN}/internal/continue`, init);
+    }
+    if (!resp.ok) {
+      console.error(`Continuation self-call failed: HTTP ${resp.status} for ${id}`);
+    }
+  } catch (e) {
+    console.error("Continuation self-call failed:", e);
+  }
+}
+
+/** Send a continuation message via raw Bot API (HTML, plain-text fallback, long-split). */
+async function sendContinuationMsg(env: Env, chatId: string, markdownText: string): Promise<void> {
+  const html = mdToTelegramHtml(markdownText);
+  const parts = splitLongMessage(html);
+  for (const part of parts) {
+    const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: part,
+        parse_mode: "HTML",
+        link_preview_options: { is_disabled: false, show_above_text: true },
+      }),
+    });
+    if (!resp.ok) {
+      // HTML rejected (edge-case markup) — plain-text fallback, never raw HTML
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: stripHtml(part) }),
+      }).catch(() => {});
+    }
+  }
+}
+
+function countToolResults(dataJson: string): number {
+  try {
+    const d = JSON.parse(dataJson);
+    return Array.isArray(d.messages) ? d.messages.filter((m: any) => m.role === "tool").length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Resume one checkpointed pass. Finishes → sends the conclusion and cleans up.
+ * Times out again → sends a "Part k" progress message and chains the next pass.
+ */
+async function runContinuationPass(env: Env, id: string): Promise<void> {
+  try {
+    console.warn(`[SPLIT] continuation pass started: ${id}`);
+    const rec = await loadContinuation(env.IVY_DB, id);
+    if (!rec) return; // already finished or cleaned up
+    if (rec.attempts > MAX_CONTINUE_PASSES) {
+      await sendContinuationMsg(
+        env,
+        rec.chat_id,
+        "⚠️ This request was too big even after several passes — I've kept what I gathered in the conversation. Try asking again in smaller pieces."
+      );
+      await deleteContinuation(env.IVY_DB, id);
+      return;
+    }
+    const data = JSON.parse(rec.data) as { messages: any[]; model: string };
+    const result = await processAi(env, data.messages, rec.chat_id, data.model, rec.attempts);
+    if (result.text.startsWith(CONTINUE_PREFIX)) {
+      const newId = result.text.slice(CONTINUE_PREFIX.length).trim();
+      const nxt = newId ? await loadContinuation(env.IVY_DB, newId) : null;
+      const gathered = nxt ? countToolResults(nxt.data) : 0;
+      await sendContinuationMsg(env, rec.chat_id, `📦 Part ${rec.attempts} gathered (${gathered} sources so far) — continuing…`);
+      if (newId) await fireContinuation(env, newId);
+    } else {
+      await sendContinuationMsg(env, rec.chat_id, result.text);
+      await deleteContinuation(env.IVY_DB, id);
+      console.warn(`[SPLIT] continuation pass finished: ${id}`);
+    }
+  } catch (e: any) {
+    console.error("Continuation pass error:", e);
+  }
+}
+
 function setupBot(bot: Bot<MyContext>, env: Env) {
   bot.use(
     session({
@@ -363,12 +488,16 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
   bot.command("clear", async (ctx) => {
     ctx.session.history = [];
+    const chatId = ctx.chat?.id;
+    if (chatId) await clearContinuations(env.IVY_DB, String(chatId)).catch(() => {});
     await ctx.reply("Conversation reset ✅");
   });
 
   bot.command("new", async (ctx) => {
     ctx.session.history = [];
     ctx.session.model = MODELS[0];
+    const chatId = ctx.chat?.id;
+    if (chatId) await clearContinuations(env.IVY_DB, String(chatId)).catch(() => {});
     await ctx.reply("New conversation started 💬");
   });
 
@@ -835,11 +964,22 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       }
 
       if (result.text) {
-        // Replace the streaming placeholder with the full formatted reply (handles
-        // long descriptions + any edge-case markup rejection)
-        await sendFormatted(ctx, ctx.chat.id, placeholder, result.text);
-        // Store raw text (not sanitized) so escapes don't compound in history
-        history.push({ role: "assistant", content: result.text });
+        const contId = result.text.startsWith(CONTINUE_PREFIX) ? result.text.slice(CONTINUE_PREFIX.length).trim() : "";
+        if (contId) {
+          // Split-and-continue: fire the resume pass first (critical path), then
+          // acknowledge with a best-effort edit.
+          console.warn(`[SPLIT] marker detected (photo path), firing continuation ${contId}`);
+          await fireContinuation(env, contId);
+          try {
+            await ctx.api.editMessageText(ctx.chat.id, placeholder.message_id, "⏳ That's a big one — I'll gather it in parts and send them as they're ready…");
+          } catch {}
+        } else {
+          // Replace the streaming placeholder with the full formatted reply (handles
+          // long descriptions + any edge-case markup rejection)
+          await sendFormatted(ctx, ctx.chat.id, placeholder, result.text);
+          // Store raw text (not sanitized) so escapes don't compound in history
+          history.push({ role: "assistant", content: result.text });
+        }
       }
 
       if (history.length > MAX_HISTORY) {
@@ -1037,12 +1177,29 @@ async function handleChat(ctx: MyContext, env: Env, text: string) {
   }
 
   if (result.text) {
-    // Format as HTML, split long replies, edit placeholder / reply — with
-    // automatic plain-text fallback so raw markup never leaks to the user
-    await sendFormatted(ctx, chatId, placeholderMsg, result.text);
-    // Store the RAW model text in history — sanitized text (escaped \_ \`) would
-    // compound escape sequences across turns and pollute what the model sees.
-    history.push({ role: "assistant", content: result.text });
+    const contId = result.text.startsWith(CONTINUE_PREFIX) ? result.text.slice(CONTINUE_PREFIX.length).trim() : "";
+    if (contId) {
+      // Split-and-continue: fire the resume pass FIRST (critical path — it must
+      // not wait on a Telegram API round-trip that could eat the waitUntil
+      // budget), then acknowledge with a best-effort edit.
+      console.warn(`[SPLIT] marker detected, firing continuation ${contId}`);
+      await fireContinuation(env, contId);
+      try {
+        if (placeholderMsg) {
+          await ctx.api.editMessageText(chatId, placeholderMsg.message_id, "⏳ That's a big one — I'll gather it in parts and send them as they're ready…");
+        } else {
+          await ctx.api.sendMessage(chatId, "⏳ That's a big one — I'll gather it in parts and send them as they're ready…");
+        }
+      } catch {}
+      // No history push here — the conclusion arrives from the continuation chain
+    } else {
+      // Format as HTML, split long replies, edit placeholder / reply — with
+      // automatic plain-text fallback so raw markup never leaks to the user
+      await sendFormatted(ctx, chatId, placeholderMsg, result.text);
+      // Store the RAW model text in history — sanitized text (escaped \_ \`) would
+      // compound escape sequences across turns and pollute what the model sees.
+      history.push({ role: "assistant", content: result.text });
+    }
   }
 
   // Trim: keep existing system prompt + last N messages
@@ -1140,6 +1297,8 @@ app.get("/init", async (c) => {
     "CREATE TABLE IF NOT EXISTS knowledge (chat_id TEXT NOT NULL, subject TEXT NOT NULL, predicate TEXT NOT NULL, object TEXT NOT NULL, source TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (chat_id, subject, predicate, object))",
     "CREATE INDEX IF NOT EXISTS idx_knowledge_subject ON knowledge(chat_id, subject)",
     "CREATE TABLE IF NOT EXISTS dedup (update_id INTEGER PRIMARY KEY, created_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS continuations (id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, data TEXT NOT NULL, attempts INTEGER NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS idx_continuations_chat ON continuations(chat_id)",
   ];
   try {
     for (const stmt of statements) {
@@ -1149,6 +1308,19 @@ app.get("/init", async (c) => {
   } catch (e: any) {
     return c.text(`D1 init error: ${e.message}`, 500);
   }
+});
+
+// ---------- Internal: split-and-continue pass ----------
+// Authenticated with a hash of the bot token (only this worker knows it) so
+// nobody can trigger AI work externally. ACKs immediately; the pass runs in
+// this request's own waitUntil (fresh 30s budget) and self-chains if needed.
+app.post("/internal/continue", async (c) => {
+  const auth = await continueAuth(c.env);
+  if (c.req.header("X-Continue") !== auth) return c.text("Unauthorized", 401);
+  const { id } = await c.req.json<{ id: string }>().catch(() => ({ id: "" }));
+  if (!id) return c.text("Bad request", 400);
+  c.executionCtx.waitUntil(runContinuationPass(c.env, id));
+  return c.text("Accepted", 202);
 });
 
 // ---------- Migrate: recreate tables with TEXT chat_id ----------
@@ -1214,6 +1386,17 @@ app.post("/debug/smoke", async (c) => {
     .bind(id, chatId, JSON.stringify({ kind: "cron", expr: "0 9 * * *", tz: "UTC" }), "🧪 Ivy smoke test OK — jobs cron works", Date.now())
     .run();
   return c.json({ ok: true, jobId: id, firesIn: "next minute cron tick" });
+});
+
+// POST /debug/continuations — list split-and-continue checkpoints [admin]
+app.post("/debug/continuations", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const rows = await c.env.IVY_DB.prepare(
+    "SELECT id, chat_id, attempts, created_at FROM continuations ORDER BY created_at DESC LIMIT 20"
+  ).all<{ id: string; chat_id: string; attempts: number; created_at: number }>();
+  return c.json({ ok: true, continuations: rows.results || [] });
 });
 
 // POST /debug/jobs — list persisted jobs (verifies D1 writes) [admin]
@@ -1343,13 +1526,32 @@ app.onError((err, c) => {
 });
 
 // ---------- Cron: Fire due reminders + recurring jobs ----------
-async function scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+async function scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
   // Prune the cross-isolate dedup table (rows are kept ~1h; Telegram update_ids
   // are monotonic so anything older than the TTL can never repeat).
   try {
     await env.IVY_DB.prepare("DELETE FROM dedup WHERE created_at < ?").bind(Date.now() - 3_600_000).run();
   } catch (e) {
     console.error("Dedup prune error:", e);
+  }
+  // Sweep orphaned split-and-continue checkpoints: if a pass was cancelled by
+  // the platform (rare — the deadline guard prevents it), retry once after a
+  // grace period instead of dropping the user's request silently. The pass runs
+  // inline in this tick's waitUntil (fresh budget) — NOT via fireContinuation's
+  // network fetch, which can't re-enter this worker reliably.
+  try {
+    const stale = await env.IVY_DB.prepare(
+      "SELECT id FROM continuations WHERE created_at < ? AND attempts < ?"
+    ).bind(Date.now() - 5 * 60_000, MAX_CONTINUE_PASSES).all<{ id: string }>();
+    if ((stale.results || []).length) {
+      console.warn(`[CRON] sweep found ${stale.results!.length} stale continuation(s)`);
+    }
+    for (const row of stale.results || []) {
+      console.warn(`[CRON] resuming stale continuation ${row.id} (inline pass)`);
+      ctx.waitUntil(runContinuationPass(env, row.id));
+    }
+  } catch (e) {
+    console.error("Continuation sweep error:", e);
   }
   await processDueJobs(env);
 }
