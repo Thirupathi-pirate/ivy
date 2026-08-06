@@ -134,7 +134,7 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 | `DISCORD_PUBLIC_KEY` | ❌ Optional | `index.ts` | Ed25519 verify |
 | `DISCORD_APP_ID` | ❌ Optional | `index.ts` | Command registration |
 
-> ⚠️ `.env` is **committed** to git. Do not add new secrets without user confirmation.
+> ⚠️ `.env` is **gitignored** (local dev only). Production secrets go via `wrangler secret put <NAME>` — never paste a key into a chat or commit it.
 
 ---
 
@@ -156,8 +156,8 @@ gemini-2.5-flash-lite         (preferred — fast/cheap, biggest free quota)
 ```
 - **Provider routing:** models starting with `gemini-` use `GEMINI_API_KEY` + `callGemini`; all others use `GROQ_API_KEY` + `callGroq` (OpenAI-compatible, tool support via `tool_choice: "auto"`).
 - **Per-model free-tier quota:** Gemini free tier caps each model's requests per day per project (e.g. `gemini-2.5-flash` ≈ 20/day). More models in the chain = more daily buckets = more total capacity before hitting Groq.
-- **Groq free tier:** 30 RPM per model; llama-3.3-70b 1K RPD / 12K TPM (best chat fit — heavy system prompt eats TPM fast), gpt-oss-* 1K RPD / 8K TPM, llama-3.1-8b 14.4K RPD / 6K TPM. 429s fall through silently to the next model.
-- **Groq output cap:** 8192 max tokens for all Groq models (`MODEL_MAX_TOKENS`).
+- **Groq free tier:** 30 RPM per model; llama-3.3-70b 1K RPD / 12K TPM / **100K TPD**, gpt-oss-* 1K RPD / 8K TPM, llama-3.1-8b 14.4K RPD / 6K TPM. TPD is the binding constraint — each request charges input + reserved `max_tokens` against the daily bucket. 429s fall through silently to the next model (429 body is logged with the bucket numbers).
+- **Groq output cap:** 2048 max tokens for all Groq models (`MODEL_MAX_TOKENS`) — bot replies rarely exceed that, and at 8192 a single request burned ~10K of the 100K daily bucket (~10 messages/day before Groq died).
 - **Selectable** via `/models`, `/model <name>`, and Discord `/model` (single source of truth: `MODELS` exported from `src/ai.ts`).
 **Rate limiting:** Detects 429, 503, Gemini error codes. If all 11 models exhausted → *"I'm rate-limited across all models"*.
 **Provider timeouts:** 8s fast-fail per model call (`MODEL_CALL_TIMEOUT_MS`). The webhook ACKs Telegram instantly and runs the AI loop in `ctx.waitUntil()`, which extends execution up to 30s after the response — the free-plan platform otherwise terminates webhook requests at ~10s wall-clock, which killed multi-turn tool flows (side effects ran, reply lost). The 8s fast-fail keeps slow models (3.6-flash / 2.5-pro on free tier) from monopolizing the 30s budget: each handoff burns ≤8s, so a 2-3 turn tool loop fits comfortably.
@@ -502,7 +502,7 @@ Also: `.github/workflows/repair-posts.yml` — every 6h, runs `scripts/repair_po
 | **CrewAI** | `@CrewBase` decorator + YAML (`agents.yaml`, `tasks.yaml`) |
 | **Blog posts** | `_posts/YYYY-MM-DD-title.md` — Chirpy frontmatter |
 | **Git** | Conventional commits. CI commits `[skip ci]` |
-| **`.env`** | Committed to git — do not add secrets without confirmation |
+| **`.env`** | Gitignored (local dev only) — production secrets via `wrangler secret put` |
 | **Legacy** | `cloudflare-worker.js` — do not edit/deploy. Active: `src/index.ts` + `src/ai.ts` |
 
 ---

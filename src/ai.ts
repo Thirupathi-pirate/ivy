@@ -1807,11 +1807,14 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
 // ===================== Groq API Call =====================
 
 const MODEL_MAX_TOKENS: Record<string, number> = {
-  // Groq caps output at 8192 tokens — keep all Groq models at the limit
-  "llama-3.3-70b-versatile": 8192,
-  "llama-3.1-8b-instant": 8192,
-  "openai/gpt-oss-20b": 8192,
-  "openai/gpt-oss-120b": 8192,
+  // Groq free tier charges input + reserved max_tokens against a tiny daily
+  // bucket (llama-3.3 = 100K TPD). At 8192 a single request burns ~10K tokens
+  // (~10 messages/day). Cap output at 2048 — bot replies rarely exceed that —
+  // and the bucket lasts ~2-3x longer before the chain falls through to Gemini.
+  "llama-3.3-70b-versatile": 2048,
+  "llama-3.1-8b-instant": 2048,
+  "openai/gpt-oss-20b": 2048,
+  "openai/gpt-oss-120b": 2048,
 };
 
 // Webhook processing runs in ctx.waitUntil (30s budget after the instant ACK).
@@ -1856,9 +1859,13 @@ async function callGroq(
     console.warn(`[${model}] Groq request failed: ${e?.message || e.name}`);
     return { _rateLimited: true, model };
   }
-  // Rate limits (429/413) AND server errors (5xx) → fall back to the next model
+  // Rate limits (429/413) AND server errors (5xx) → fall back to the next model.
+  // Log the 429 body — it names the binding constraint (TPM vs TPD vs RPM) and
+  // the bucket numbers, which is how the max_tokens budget is tuned.
   if (resp.status === 429 || resp.status === 413 || resp.status >= 500) {
     clearTimeout(timeout);
+    const detail = resp.status === 429 ? await resp.text().catch(() => "") : "";
+    console.warn(`[${model}] Groq ${resp.status}${detail ? `: ${detail.slice(0, 220)}` : ""}`);
     return { _rateLimited: true, model };
   }
   if (!resp.ok) {
