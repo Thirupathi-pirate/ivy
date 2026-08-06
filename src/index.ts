@@ -60,12 +60,18 @@ interface Env {
   SELF?: Fetcher;
   /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
   IVY_PERSONA?: string;
+  /** Override the Telegram Bot API base URL (local testing only). */
+  TELEGRAM_API_ROOT?: string;
 }
 
 interface SessionData {
   history: Array<{ role: string; content?: string }>;
   model: string;
   lastUserMessage?: string;
+  /** URL handling mode: "auto" (default) auto-loads sent URLs with AI-loop
+   * fallback on failure; "manual" skips auto-load and lets the model decide
+   * (it can still fetch pages itself via fetch_url / browse_url). */
+  urlMode?: "auto" | "manual";
   activeUrl?: string;
   activeUrlData?: {
     ok: boolean;
@@ -148,6 +154,12 @@ function getSystemPrompt(opts: {
       "When the user first shares a page, open with a brief overview (what the page is, its main topic) and " +
       "then ask what they'd like to know — review, live check, changes, or a specific question.\n` +
       `Page content (${activePage.chars ?? "?"} chars, truncated):\n---\n${activePage.text.slice(0, 12000)}\n---`;
+  } else if (activePage && !activePage.ok) {
+    // Auto-load failed — the message still went to the AI loop (fallback mode).
+    // Tell the model why there's no content so it can retry or answer honestly.
+    prompt +=
+      `\n\n🌐 <Active page> (auto-load FAILED): ${activePage.url}${activePage.error ? ` — ${activePage.error}` : ""}\n` +
+      `The automatic page load failed. You may try fetch_url yourself, or tell the user the page is unreachable and help with what you can.`;
   }
 
   prompt +=
@@ -196,6 +208,7 @@ const TELEGRAM_COMMANDS: Array<{ command: string; description: string }> = [
   { command: "system", description: "View bot status and fallback chain" },
   { command: "personality", description: "Customize my tone: formality, humor, empathy" },
   { command: "fetch", description: "Load a web page for review (or just send a URL)" },
+  { command: "urlmode", description: "URL handling: auto (default, loads URLs w/ fallback) or manual (model decides)" },
   { command: "page", description: "Show the currently loaded page" },
   { command: "unload", description: "Clear the loaded page" },
   { command: "weather", description: "Current weather & forecast, e.g. /weather Bangalore" },
@@ -486,6 +499,7 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         "\`/redo\` — Re-send last message · \`/system\` — Status\n\n" +
         "*🌐 Web & browsing*\n" +
         "\`/fetch <url>\` — Load a web page (or just send a URL!)\n" +
+        "\`/urlmode\` — auto-load URLs w/ fallback (auto, default) or let the model decide (manual)\n" +
         "\`/weather <city>\` — Current conditions & forecast\n" +
         "\`/youtube <url>\` — Summarize a video from its transcript\n" +
         "\`/watch <url> [every 2h]\` — Notify when a page changes\n" +
@@ -627,6 +641,27 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
       `📄 Loaded <a href="${escapeHtml(loaded.url)}">${escapeHtml(loaded.title || loaded.url)}</a> — HTTP ${loaded.status}, ${loaded.chars} chars.\n\n` +
         `Now ask me to <b>review it</b>, <b>check if it's live</b>, <b>watch for changes</b>, or ask anything about the page.`,
       { parse_mode: "HTML", link_preview_options: { is_disabled: false, show_above_text: true } }
+    );
+  });
+
+  bot.command("urlmode", async (ctx) => {
+    const arg = ctx.match?.trim().toLowerCase();
+    if (arg === "auto" || arg === "manual") {
+      ctx.session.urlMode = arg;
+      await ctx.reply(
+        arg === "auto"
+          ? "🔗 URL mode: **auto** (default) — I auto-load URLs you send, and if a page fails to load I fall back to answering with the model (which can retry fetching itself)."
+          : "🔗 URL mode: **manual** — I won't auto-load URLs; the model decides how to handle links (it can still fetch pages itself when useful).",
+        { parse_mode: "Markdown" }
+      );
+      return;
+    }
+    const current = ctx.session.urlMode ?? "auto";
+    await ctx.reply(
+      `Current URL mode: **${current}**\n\n` +
+        "`/urlmode auto` — auto-load sent URLs, AI-loop fallback on failure (default)\n" +
+        "`/urlmode manual` — never auto-load; the model decides",
+      { parse_mode: "Markdown" }
     );
   });
 
@@ -866,15 +901,24 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
     if (text.startsWith("/")) return;
 
-    // --- Auto-load URLs: send a link → Ivy fetches it and keeps it as the
-    // "active page" so follow-ups ("review it", "is it live?", "any changes?")
-    // are answered from the page content (unread-style flow). ---
+    // --- URL handling mode ---
+    // "auto" (default): send a link → Ivy fetches it and keeps it as the
+    // "active page" (unread-style flow: "review it", "is it live?", "any
+    // changes?" are answered from the page content). If the load FAILS it
+    // falls back to the AI loop instead of swallowing the message — the model
+    // sees the failed page in its system prompt and can retry with fetch_url
+    // or answer honestly.
+    // "manual": never auto-load; the message always goes to the AI loop and
+    // the model decides whether/how to fetch (fetch_url / browse_url tools).
+    const urlMode = ctx.session.urlMode ?? "auto";
     const urlMatch = text.match(/(https?:\/\/[^\s<>()]+)/i);
-    if (urlMatch && !/youtube\.com|youtu\.be/i.test(urlMatch[1])) {
+    if (urlMatch && !/youtube\.com|youtu\.be/i.test(urlMatch[1]) && urlMode === "auto") {
       const url = urlMatch[1].replace(/[),.;:!?"]+$/, "");
       const cached = ctx.session.activeUrlData && ctx.session.activeUrl === url && Date.now() - ctx.session.activeUrlData.fetchedAt < 5 * 60 * 1000;
       if (!cached) {
-        await ctx.reply("🔍 Loading page…");
+        try {
+          await ctx.reply("🔍 Loading page…");
+        } catch {}
         const loaded = await fetchUrlContent(url);
         if (loaded.ok && loaded.text) {
           ctx.session.activeUrl = loaded.url;
@@ -891,8 +935,9 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
         } else {
           ctx.session.activeUrl = url;
           ctx.session.activeUrlData = { ok: false, status: loaded.status, url, fetchedAt: loaded.fetchedAt, error: loaded.error };
-          await ctx.reply(`⚠️ Couldn't load that page: ${loaded.error || loaded.status || "unknown error"}`);
-          return;
+          // Fallback: DON'T return — let the AI loop answer (it knows the page
+          // failed via the system prompt and may try fetch_url itself).
+          console.warn(`[URL] auto-load failed for ${url}: ${loaded.error || loaded.status} — falling back to AI loop`);
         }
       }
     }
@@ -1534,7 +1579,9 @@ app.all("*", async (c) => {
   // requests after ~10s wall-clock, which killed multi-turn tool flows (the
   // side effects ran but the reply was lost). waitUntil extends execution up
   // to 30s after the response, so 2-3 turn tool loops now fit comfortably.
-  const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN);
+  const bot = new Bot<MyContext>(c.env.TELEGRAM_BOT_TOKEN, {
+    client: { apiRoot: c.env.TELEGRAM_API_ROOT || "https://api.telegram.org" },
+  });
   setupBot(bot, c.env);
   const chatKey = extractChatKey(update);
   c.executionCtx.waitUntil(

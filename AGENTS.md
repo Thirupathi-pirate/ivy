@@ -130,6 +130,7 @@ crewai test -n 2 -m gpt-4o-mini  # test crew
 | `REDDIT_CLIENT_ID` | ❌ Optional | `ai.ts` | Reddit search |
 | `REDDIT_CLIENT_SECRET` | ❌ Optional | `ai.ts` | Reddit search |
 | `REDDIT_USER_AGENT` | ❌ Optional | `ai.ts` | Reddit search |
+| `TELEGRAM_API_ROOT` | ❌ Optional | `index.ts` | Override Bot API base URL (local testing only) |
 
 > ⚠️ `.env` is **gitignored** (local dev only). Production secrets go via `wrangler secret put <NAME>` — never paste a key into a chat or commit it.
 

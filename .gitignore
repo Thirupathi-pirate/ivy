@@ -17,3 +17,6 @@ scripts/used_topics.json
 
 # Local wrangler cache (state/tmp — never commit)
 .wrangler/
+
+# Local dev secrets (never commit)
+.dev.vars
