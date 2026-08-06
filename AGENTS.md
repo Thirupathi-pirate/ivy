@@ -67,6 +67,7 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
 | `POST` | `/` | Telegram webhook — parse update, D1 dedup, ACK instantly, AI loop in `waitUntil` (30s budget) |
 | `POST` | `/admin/posts` | List blog posts from GitHub (needs `ADMIN_PASSWORD`) |
 | `POST` | `/admin/delete` | Delete post + trigger rebuild (needs `ADMIN_PASSWORD`) |
+| `POST` | `/admin/commands` | Re-register Telegram command menu (`setMyCommands`) + return BotFather paste text (needs `ADMIN_PASSWORD`) |
 | `POST` | `/discord` | Discord interactions (Ed25519 verify → PONG → deferred) |
 | `POST` | `/register-commands` | Bulk-register Discord slash commands |
 | `POST` | `/chat-message` | Relay for Discord Gateway @mention |

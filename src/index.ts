@@ -176,6 +176,38 @@ const modelLabel = (m: string): string => MODEL_LABELS[m] || m;
 
 const FALLBACK_CHAIN_DISPLAY = MODELS.map((m) => `\`${m}\``).join(" → ");
 
+/**
+ * Single source of truth for the Telegram command menu (setMyCommands — what
+ * users see in the bot's command button and BotFather's /setcommands).
+ * Keep in sync with the bot.command() handlers below.
+ */
+const TELEGRAM_COMMANDS: Array<{ command: string; description: string }> = [
+  { command: "start", description: "Start the bot" },
+  { command: "help", description: "Show all commands, tips and model list" },
+  { command: "new", description: "Start a new conversation (clears history + model)" },
+  { command: "clear", description: "Reset chat history (keep selected model)" },
+  { command: "redo", description: "Re-send your last message to the AI" },
+  { command: "system", description: "View bot status and fallback chain" },
+  { command: "personality", description: "Customize my tone: formality, humor, empathy" },
+  { command: "fetch", description: "Load a web page for review (or just send a URL)" },
+  { command: "page", description: "Show the currently loaded page" },
+  { command: "unload", description: "Clear the loaded page" },
+  { command: "weather", description: "Current weather & forecast, e.g. /weather Bangalore" },
+  { command: "youtube", description: "Summarize a YouTube video from its transcript" },
+  { command: "watch", description: "Watch a page and get notified when it changes" },
+  { command: "jobs", description: "List your reminders, alerts and page watches" },
+  { command: "cancel", description: "Cancel a job by ID (see /jobs)" },
+  { command: "write", description: "Generate a blog post about a topic" },
+  { command: "model", description: "Switch AI model by name, e.g. /model llama-3.3-70b-versatile" },
+  { command: "models", description: "Pick an AI model from an interactive menu" },
+  { command: "forget", description: "Erase everything I remember about you" },
+  { command: "knowledge", description: "Show my knowledge graph about a subject" },
+  { command: "forgetkg", description: "Remove knowledge graph facts about a subject" },
+];
+
+/** The same list formatted for pasting into BotFather → /setcommands. */
+const BOTFATHER_COMMANDS_TEXT = TELEGRAM_COMMANDS.map((c) => `${c.command} - ${c.description}`).join("\n");
+
 function splitLongMessage(text: string, maxLen = 4096): string[] {
   if (text.length <= maxLen) return [text];
   const parts: string[] = [];
@@ -300,39 +332,34 @@ function setupBot(bot: Bot<MyContext>, env: Env) {
 
   bot.command("help", async (ctx) => {
     await ctx.reply(
-      "*Commands:*\n" +
-        "\`/fetch <url>\` — Load a web page (or just send a URL)\n" +
-        "\`/weather <city>\` — Current weather & forecast\n" +
-        "\`/youtube <url>\` — Video transcript\n" +
+      "*🤖 Commands*\n" +
+        "\`/start\` — Welcome & intro\n" +
+        "\`/help\` — This message\n" +
+        "\`/new\` — New conversation · \`/clear\` — Reset history\n" +
+        "\`/redo\` — Re-send last message · \`/system\` — Status\n\n" +
+        "*🌐 Web & browsing*\n" +
+        "\`/fetch <url>\` — Load a web page (or just send a URL!)\n" +
+        "\`/weather <city>\` — Current conditions & forecast\n" +
+        "\`/youtube <url>\` — Summarize a video from its transcript\n" +
         "\`/watch <url> [every 2h]\` — Notify when a page changes\n" +
-        "\`/jobs\` — List reminders / alerts / page watches\n" +
-        "\`/cancel <id>\` — Cancel a job\n" +
-        "\`/page\` — Show loaded page · \`/unload\` — Clear it\n" +
-        "\`/personality\` — Customize my tone (formality / humor / empathy)\n" +
-        "\`/knowledge\` — View my knowledge graph about a subject\n" +
-        "\`/write <topic>\` — Generate a blog post\n" +
-        "\`/models\` — Switch AI model (inline keyboard)\n" +
-        "\`/model <name>\` — Switch model by name\n" +
-        "\`/new\` — Reset conversation\n" +
-        "\`/redo\` — Re-send last message\n" +
-        "\`/system\` — View bot status\n" +
-        "\`/clear\` — Reset chat history\n" +
-        "\`/help\` — This message\n\n" +
-        "*Web pages:*\n" +
-        "Send me any URL and I'll load it automatically. Then ask me to review it, " +
-        "check if it's live, find notifications, compare changes, or ask anything about it. " +
-        "You can also watch a page and I'll alert you when it changes.\n\n" +
-        "*Tips:*\n" +
-        "• Ask for reminders (\"remind me every day at 9am IST\")\n" +
-        "• Ask me to search the web\n" +
-        "• Send a photo 📷 for analysis\n" +
-        "• Send a voice note 🎤 for transcription\n" +
-        "• Send a PDF or text document 📄 for analysis\n" +
-        "• Ask for movie recommendations by genre/mood/title 🎬\n" +
-        "• I remember facts about you across conversations 🧠\n" +
-        "• \`/personality\` to customize my tone\n" +
-        "• \`/knowledge\` to see what I know about a subject\n\n" +
-        "*Models:*\n" +
+        "\`/jobs\` — List reminders / alerts / watches · \`/cancel <id>\` — Stop one\n" +
+        "\`/page\` — Show loaded page · \`/unload\` — Clear it\n\n" +
+        "*🧠 AI*\n" +
+        "\`/models\` — Pick a model from a menu\n" +
+        "\`/model <name>\` — Switch model directly\n" +
+        "\`/personality\` — Customize my tone\n\n" +
+        "*📝 Blog & memory*\n" +
+        "\`/write <topic>\` — Generate a blog post (CrewAI pipeline)\n" +
+        "\`/knowledge <subject>\` — My knowledge graph · \`/forgetkg\` — Remove facts\n" +
+        "\`/forget\` — Erase memories of you\n\n" +
+        "*💡 Try this:*\n" +
+        "• Send any URL and ask me to *review* it, *check if it's live*, or *scrape* it — I'll load it and answer from the page content\n" +
+        "• \`scrape the top news\` — I'll fetch and summarize\n" +
+        "• \`screenshot example.com\` — page screenshot (browser tools; auto-enables with Browser Run)\n" +
+        "• \`remind me every day at 9am IST\` — recurring reminders\n" +
+        "• Send a 📷 photo, 🎤 voice note, or 📄 PDF/text doc — I'll analyze it\n" +
+        "• Ask for movie recommendations by genre/mood/title 🎬\n\n" +
+        "*⚙️ Model chain:*\n" +
         FALLBACK_CHAIN_DISPLAY,
       { parse_mode: "Markdown" }
     );
@@ -1431,6 +1458,23 @@ app.get("/migrate", async (c) => {
 });
 
 // ---------- Debug: smoke-test helper (guarded by ADMIN_PASSWORD) ----------
+// POST /admin/commands — re-register the Telegram command menu (setMyCommands)
+// without re-running the webhook setup, and return the BotFather paste text.
+app.post("/admin/commands", async (c) => {
+  if (!c.env.ADMIN_PASSWORD || c.req.header("x-admin") !== c.env.ADMIN_PASSWORD) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  const apiBase = `https://api.telegram.org/bot${c.env.TELEGRAM_BOT_TOKEN}`;
+  await fetch(`${apiBase}/deleteMyCommands`, { method: "POST" });
+  const resp = await fetch(`${apiBase}/setMyCommands`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
+  });
+  const data: any = await resp.json();
+  return c.json({ ok: resp.ok, api: data, botFatherText: BOTFATHER_COMMANDS_TEXT });
+});
+
 // POST /debug/smoke with header `x-admin: <ADMIN_PASSWORD>`:
 // ensures the jobs table exists and inserts a reminder job due NOW so the
 // minute cron delivers a test message to TELEGRAM_CHAT_ID. Returns job id.
@@ -1510,35 +1554,14 @@ app.all("*", async (c) => {
       });
       const webhookData: any = await webhookResp.json();
 
-      // Delete old commands, then register current ones
-      const cmdList = [
-        { command: "start", description: "Start the bot" },
-        { command: "help", description: "Show help and available commands" },
-        { command: "fetch", description: "Load a web page for review (or just send a URL)" },
-        { command: "weather", description: "Get weather for a city, e.g. /weather Bangalore" },
-        { command: "youtube", description: "Fetch a YouTube video transcript" },
-        { command: "watch", description: "Watch a page and get notified when it changes" },
-        { command: "jobs", description: "List active reminders / alerts / page watches" },
-        { command: "cancel", description: "Cancel a job by ID" },
-        { command: "page", description: "Show the currently loaded page" },
-        { command: "unload", description: "Clear the loaded page" },
-        { command: "personality", description: "Customize my tone (formality / humor / empathy)" },
-        { command: "knowledge", description: "Show my knowledge graph about a subject" },
-        { command: "forgetkg", description: "Remove knowledge graph facts about a subject" },
-        { command: "write", description: "Write a blog post about a topic" },
-        { command: "model", description: "Switch AI model by name" },
-        { command: "models", description: "Select AI model from a menu" },
-        { command: "new", description: "Start a new conversation" },
-        { command: "redo", description: "Re-send your last message" },
-        { command: "clear", description: "Reset chat history" },
-        { command: "forget", description: "Clear all saved memories" },
-        { command: "system", description: "View bot status" },
-      ];
+      // Delete old commands, then register current ones (single source of truth:
+      // TELEGRAM_COMMANDS constant — same list is used by /admin/commands and
+      // shown in the /help menu button)
       await fetch(`${apiBase}/deleteMyCommands`, { method: "POST" });
       const cmdResp = await fetch(`${apiBase}/setMyCommands`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commands: cmdList }),
+        body: JSON.stringify({ commands: TELEGRAM_COMMANDS }),
       });
       const cmdData: any = await cmdResp.json();
 
