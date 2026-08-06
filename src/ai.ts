@@ -2283,6 +2283,7 @@ const TOOL_KEYWORDS = [
   "remind", "reminder", "search", "look up", "remember", "recall", "movie", "film", "discover", "recommend", "what time", "time in",
   "weather", "forecast", "temperature", "rain", "youtube", "video transcript", "summarize this video", "summarize the video",
   "http",
+  "scrape", "scrape this", "scrape that", "scrape the", "visit", "visit the", "visit this", "visit that", "go to", "fetch this", "fetch that", "fetch the page",
   "every day", "every week", "every monday", "every tuesday", "every wednesday", "every thursday", "every friday", "every saturday", "every sunday",
   "every hour", "every 2 hours", "daily", "weekly", "weekdays", "weekends",
   "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
