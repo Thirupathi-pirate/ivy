@@ -30,7 +30,7 @@ Two-layer project: **Telegram bot** (TypeScript, Cloudflare Worker) + **blog wri
    ├─ Gemini API (chat + tool loop, max 5 turns)
    │  ├─ memory_save / memory_recall
    │  ├─ create_reminder / list_reminders / cancel_reminder
-   │  ├─ search_web / fetch_url / get_current_time
+   │  ├─ search_web / fetch_url / browse_url / screenshot_url / get_current_time
    │  └─ get_movie_info / get_movie_recommendations / discover_movies
    ├─ Response sanitized (Telegram Markdown) → sent back
    └─ History capped at 10 messages → saved to D1
@@ -260,6 +260,10 @@ Ivy's tool loop uses GOAP-style detection — `needsTools()` checks messages for
 |------|-------------|
 | `search_web(query)` | Tavily search (`include_answer: true`), summary + 5 results |
 | `fetch_url(url)` | Fetch URL content (first ~15K chars, 8s timeout, content-type check) |
+| `browse_url(url, selector?)` | Browser Run Puppeteer: JS-rendered page text (SPAs, dashboards), optional CSS selector. Graceful "not enabled" without the binding |
+| `screenshot_url(url)` | Browser Run Puppeteer: screenshot → `sendPhoto` to chat (fire-and-forget). Graceful "not enabled" without the binding |
+
+> **Browser automation (Cloudflare Browser Run, paid):** `browse_url`/`screenshot_url` run Puppeteer (`@cloudflare/puppeteer` 1.3.0) in a Worker via the `browser` binding. Enable: turn on Browser Run in the dashboard, uncomment the `[browser]` block in `wrangler.toml`, redeploy. Without the binding the tools reply "not enabled" and the model falls back to `fetch_url`. **Chromium only** — Camoufox/Firefox anti-detect forks are NOT supported (that needs a Python sidecar, e.g. `python -m camoufox server` + Playwright). Browser sessions reuse via `keep_alive: 600000`.
 
 ### ⏱️ Jobs (self-service cron: recurring reminders + keyword alerts + page watches)
 | Tool | Description |

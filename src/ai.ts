@@ -52,6 +52,9 @@ interface Env {
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
   IVY_DB: D1Database;
+  /** Browser Run binding (`browser` in wrangler.toml, paid Cloudflare feature).
+   *  Optional: browse_url / screenshot_url degrade gracefully when absent. */
+  BROWSER?: any;
   /** Owner-provided persona override (set via `wrangler secret put IVY_PERSONA`). */
   IVY_PERSONA?: string;
 }
@@ -333,6 +336,90 @@ async function fetchUrl(url: string): Promise<string> {
   if (!r.ok) return `Error fetching URL: ${r.error}`;
   const head = `📄 ${r.title || ""} (HTTP ${r.status}, ${r.chars} chars)\nSource: ${r.url}\n\n`;
   return head + (r.text || "").slice(0, 15000) + ((r.text?.length || 0) > 15000 ? "\n\n[truncated]" : "");
+}
+
+// ===================== Browser automation (Cloudflare Browser Run) =====================
+// Puppeteer inside a Worker requires the paid Browser Run binding (`browser` in
+// wrangler.toml) + the @cloudflare/puppeteer fork. Without the binding the tools
+// reply "not enabled" so the bot degrades gracefully. Browser Run is Chromium-only:
+// Camoufox / Firefox forks are NOT supported (those need a Python sidecar).
+
+const BROWSER_TOOL_TIMEOUT_MS = 25000; // goto/screenshot budget (waits until ~networkidle2)
+
+/** Shared launch: reuse a live session when possible (keep_alive 10 min). */
+async function launchBrowser(env: Env): Promise<any | null> {
+  if (!env.BROWSER) return null;
+  const puppeteer = (await import("@cloudflare/puppeteer")).default;
+  return puppeteer.launch(env.BROWSER, { keep_alive: 600_000 });
+}
+
+/**
+ * Rendered-page reader: loads a URL in a real Chromium and returns the
+ * post-JavaScript DOM text. Picks up pages fetch_url can't read (SPAs,
+ * client-rendered content, login-walled previews).
+ */
+async function browseUrl(env: Env, url: string, selector?: string): Promise<string> {
+  if (!env.BROWSER) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
+  const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  let browser: any = null;
+  try {
+    browser = await launchBrowser(env);
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.goto(target, { waitUntil: "networkidle2", timeout: BROWSER_TOOL_TIMEOUT_MS });
+    const title = await page.title().catch(() => target);
+    let text: string;
+    if (selector) {
+      const el = await page.$(selector);
+      text = el ? await el.evaluate((n: any) => (n as any).innerText || "") : `No element matched selector "${selector}".`;
+    } else {
+      text = await page.evaluate(() => (globalThis as any).document?.body?.innerText || "");
+    }
+    const clean = (text || "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 15000);
+    if (!clean) return `📄 ${title}\nSource: ${page.url()}\n\n(no readable text rendered — page may be blank or require interaction)`;
+    return `📄 ${title} (browser-rendered, ${clean.length} chars)\nSource: ${page.url()}\n\n${clean}${clean.length >= 15000 ? "\n\n[truncated]" : ""}`;
+  } catch (e: any) {
+    return `Browser error: ${e?.message || String(e)}`;
+  } finally {
+    // Leave the browser open for reuse (keep_alive); sessions close on idle.
+    if (browser && browser.sessionId && !browser.isConnected?.()) {
+      await browser.close().catch(() => {});
+    }
+  }
+}
+
+/**
+ * Screenshot: renders the URL and sends the PNG straight to the chat
+ * (fire-and-forget sendPhoto, same pattern as LaTeX/Mermaid rendering).
+ */
+async function screenshotUrl(env: Env, chatId: string, url: string): Promise<string> {
+  if (!env.BROWSER) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
+  const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  let browser: any = null;
+  try {
+    browser = await launchBrowser(env);
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1440, height: 900 });
+    await page.goto(target, { waitUntil: "networkidle2", timeout: BROWSER_TOOL_TIMEOUT_MS });
+    const shot = (await page.screenshot({ type: "png", fullPage: false })) as Buffer;
+    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo: `data:image/png;base64,${shot.toString("base64")}`,
+        caption: `🖼️ ${target}`.slice(0, 200),
+      }),
+    });
+    if (!resp.ok) return `Screenshot captured but Telegram send failed (HTTP ${resp.status}).`;
+    return `Screenshot of ${target} sent to the chat.`;
+  } catch (e: any) {
+    return `Browser error: ${e?.message || String(e)}`;
+  } finally {
+    if (browser && browser.sessionId && !browser.isConnected?.()) {
+      await browser.close().catch(() => {});
+    }
+  }
 }
 
 // ===================== Time =====================
@@ -1413,6 +1500,36 @@ function getTools(env: Env) {
     {
       type: "function",
       function: {
+        name: "browse_url",
+        description:
+          "Load a URL in a real headless browser and return the rendered page text (after JavaScript runs). Use when fetch_url returns 'JavaScript-rendered page' or for single-page apps, dashboards, or pages requiring JS. Optional CSS selector to extract one region.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The URL to browse" },
+            selector: { type: "string", description: "Optional CSS selector to extract text from (e.g. 'article', '#main')" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "screenshot_url",
+        description: "Take a screenshot of a URL in a real headless browser and send the image to the chat. Use when the user asks to see a website, preview a page, or verify how something looks.",
+        parameters: {
+          type: "object",
+          properties: {
+            url: { type: "string", description: "The URL to screenshot" },
+          },
+          required: ["url"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "get_current_time",
         description: "Get the current time, optionally in a specific timezone (e.g., 'America/New_York', 'Asia/Kolkata', 'UTC').",
         parameters: {
@@ -1746,6 +1863,10 @@ async function handleFunctionCall(env: Env, chatId: string, toolCall: GroqToolCa
       return await kgQuery(env.IVY_DB, chatId, args.subject);
     case "fetch_url":
       return await fetchUrl(args.url);
+    case "browse_url":
+      return await browseUrl(env, args.url, args.selector);
+    case "screenshot_url":
+      return await screenshotUrl(env, chatId, args.url);
     case "get_current_time":
       return getCurrentTime(args.timezone);
     case "get_weather":
@@ -2206,6 +2327,7 @@ const TOOL_KEYWORDS = [
   "alert me", "notify me", "watch for", "keep an eye", "keyword", "cron",
   "page", "website", "web page", "is it live", "is the site", "site down", "site up", "live check", "url",
   "watch this page", "watch the page", "track this page", "track the page", "page change", "page changed", "any changes", "check the page",
+  "screenshot", "take a shot of", "preview the site", "preview this site", "preview the page", "browse", "open the website", "open this website", "open the page", "open this page", "render the page", "see the site", "see the website", "what does the site look like", "how does the site look", "javascript-rendered", "js-rendered",
   "what do you know about", "do you know anything about", "knowledge graph", "facts about", "what do you remember about", "tell me about", "connected to", "related to",
 ];
 
