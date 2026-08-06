@@ -1823,15 +1823,28 @@ async function callGroq(
     console.warn(`[${model}] Groq request failed: ${e?.message || e.name}`);
     return { _rateLimited: true, model };
   }
-  clearTimeout(timeout);
   // Rate limits (429/413) AND server errors (5xx) → fall back to the next model
-  if (resp.status === 429 || resp.status === 413 || resp.status >= 500) return { _rateLimited: true, model };
+  if (resp.status === 429 || resp.status === 413 || resp.status >= 500) {
+    clearTimeout(timeout);
+    return { _rateLimited: true, model };
+  }
   if (!resp.ok) {
+    // Body read stays under the 45s abort signal (don't clearTimeout early —
+    // a hung body read would otherwise hang the message forever).
     const err = await resp.text();
+    clearTimeout(timeout);
     if (tools.length && resp.status === 400 && err.includes("tool_use_failed")) return { _retry: true };
     throw new Error(`Groq API error ${resp.status}: ${err.slice(0, 200)}`);
   }
-  return resp.json();
+  try {
+    const data: any = await resp.json();
+    clearTimeout(timeout);
+    return data;
+  } catch (e: any) {
+    clearTimeout(timeout);
+    console.warn(`[${model}] Groq response read failed: ${e?.message || e.name}`);
+    return { _rateLimited: true, model };
+  }
 }
 
 // ===================== Gemini API Call =====================
@@ -1968,19 +1981,32 @@ async function callGemini(
     console.warn(`[${model}] Gemini request failed: ${e?.message || e.name}`);
     return { _rateLimited: true, model };
   }
-  clearTimeout(timeout);
 
   // Rate limits (429/503) AND server errors (5xx) → fall back to the next model
-  if (resp.status === 429 || resp.status === 503 || resp.status >= 500) return { _rateLimited: true, model };
+  if (resp.status === 429 || resp.status === 503 || resp.status >= 500) {
+    clearTimeout(timeout);
+    return { _rateLimited: true, model };
+  }
   if (!resp.ok) {
+    // Body read stays under the 45s abort signal (don't clearTimeout early —
+    // a hung body read would otherwise hang the message forever).
     const err = await resp.text();
+    clearTimeout(timeout);
     if (resp.status === 400 && err.includes("not supported")) {
       return { _rateLimited: true, model };
     }
     throw new Error(`Gemini API error ${resp.status}: ${err.slice(0, 200)}`);
   }
 
-  const data: any = await resp.json();
+  let data: any;
+  try {
+    data = await resp.json();
+    clearTimeout(timeout);
+  } catch (e: any) {
+    clearTimeout(timeout);
+    console.warn(`[${model}] Gemini response read failed: ${e?.message || e.name}`);
+    return { _rateLimited: true, model };
+  }
 
   if (data.promptFeedback?.blockReason) {
     console.warn(`[${model}] blocked: ${data.promptFeedback.blockReason}`);
