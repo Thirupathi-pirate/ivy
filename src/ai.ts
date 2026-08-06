@@ -1,5 +1,6 @@
 const GROQ_API = "https://api.groq.com/openai/v1";
 import { escapeHtml, mdToTelegramHtml } from "./markdown";
+import { browserEnabled, extractContent, screenshotPage } from "./browser";
 
 export const MODELS = [
   // Gemini (primary chat provider) — ordered cheap/fast first, stronger later.
@@ -52,6 +53,7 @@ interface Env {
   REDDIT_CLIENT_SECRET?: string;
   REDDIT_USER_AGENT?: string;
   IVY_DB: D1Database;
+  IVY_KV?: KVNamespace;
   /** Browser Run binding (`browser` in wrangler.toml, paid Cloudflare feature).
    *  Optional: browse_url / screenshot_url degrade gracefully when absent. */
   BROWSER?: any;
@@ -339,19 +341,10 @@ async function fetchUrl(url: string): Promise<string> {
 }
 
 // ===================== Browser automation (Cloudflare Browser Run) =====================
-// Puppeteer inside a Worker requires the paid Browser Run binding (`browser` in
-// wrangler.toml) + the @cloudflare/puppeteer fork. Without the binding the tools
-// reply "not enabled" so the bot degrades gracefully. Browser Run is Chromium-only:
-// Camoufox / Firefox forks are NOT supported (those need a Python sidecar).
-
-const BROWSER_TOOL_TIMEOUT_MS = 25000; // goto/screenshot budget (waits until ~networkidle2)
-
-/** Shared launch: reuse a live session when possible (keep_alive 10 min). */
-async function launchBrowser(env: Env): Promise<any | null> {
-  if (!env.BROWSER) return null;
-  const puppeteer = (await import("@cloudflare/puppeteer")).default;
-  return puppeteer.launch(env.BROWSER, { keep_alive: 600_000 });
-}
+// Implementation lives in ./browser (session reuse, extraction, KV screenshot
+// cache). These thin wrappers keep the tool-facing string contract. Without the
+// binding the tools reply "not enabled" so the bot degrades gracefully to
+// fetch_url. Browser Run is Chromium-only — Camoufox/Firefox forks need a sidecar.
 
 /**
  * Rendered-page reader: loads a URL in a real Chromium and returns the
@@ -359,33 +352,13 @@ async function launchBrowser(env: Env): Promise<any | null> {
  * client-rendered content, login-walled previews).
  */
 async function browseUrl(env: Env, url: string, selector?: string): Promise<string> {
-  if (!env.BROWSER) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
-  const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  let browser: any = null;
-  try {
-    browser = await launchBrowser(env);
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1440, height: 900 });
-    await page.goto(target, { waitUntil: "networkidle2", timeout: BROWSER_TOOL_TIMEOUT_MS });
-    const title = await page.title().catch(() => target);
-    let text: string;
-    if (selector) {
-      const el = await page.$(selector);
-      text = el ? await el.evaluate((n: any) => (n as any).innerText || "") : `No element matched selector "${selector}".`;
-    } else {
-      text = await page.evaluate(() => (globalThis as any).document?.body?.innerText || "");
-    }
-    const clean = (text || "").replace(/\n{3,}/g, "\n\n").trim().slice(0, 15000);
-    if (!clean) return `📄 ${title}\nSource: ${page.url()}\n\n(no readable text rendered — page may be blank or require interaction)`;
-    return `📄 ${title} (browser-rendered, ${clean.length} chars)\nSource: ${page.url()}\n\n${clean}${clean.length >= 15000 ? "\n\n[truncated]" : ""}`;
-  } catch (e: any) {
-    return `Browser error: ${e?.message || String(e)}`;
-  } finally {
-    // Leave the browser open for reuse (keep_alive); sessions close on idle.
-    if (browser && browser.sessionId && !browser.isConnected?.()) {
-      await browser.close().catch(() => {});
-    }
-  }
+  if (!browserEnabled(env)) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
+  const r = await extractContent(env, url, selector);
+  if (!r.ok) return `Browser error: ${r.error}`;
+  const head = `📄 ${r.title || ""} (browser-rendered, ${(r.content || "").length} chars)${r.description ? `\n${r.description.slice(0, 200)}` : ""}\nSource: ${r.url}\n\n`;
+  const body = r.content || "(no readable text rendered — page may be blank or require interaction)";
+  const links = r.links?.length ? `\n\n🔗 Links:\n${r.links.slice(0, 10).join("\n")}` : "";
+  return head + body + links;
 }
 
 /**
@@ -393,33 +366,21 @@ async function browseUrl(env: Env, url: string, selector?: string): Promise<stri
  * (fire-and-forget sendPhoto, same pattern as LaTeX/Mermaid rendering).
  */
 async function screenshotUrl(env: Env, chatId: string, url: string): Promise<string> {
-  if (!env.BROWSER) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
+  if (!browserEnabled(env)) return "Browser automation is not enabled on this bot yet (Browser Run binding missing). Try fetch_url instead.";
+  const r = await screenshotPage(env, url);
+  if (r.error || !r.buffer) return `Browser error: ${r.error || "no screenshot produced"}`;
   const target = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  let browser: any = null;
-  try {
-    browser = await launchBrowser(env);
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1440, height: 900 });
-    await page.goto(target, { waitUntil: "networkidle2", timeout: BROWSER_TOOL_TIMEOUT_MS });
-    const shot = (await page.screenshot({ type: "png", fullPage: false })) as Buffer;
-    const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        photo: `data:image/png;base64,${shot.toString("base64")}`,
-        caption: `🖼️ ${target}`.slice(0, 200),
-      }),
-    });
-    if (!resp.ok) return `Screenshot captured but Telegram send failed (HTTP ${resp.status}).`;
-    return `Screenshot of ${target} sent to the chat.`;
-  } catch (e: any) {
-    return `Browser error: ${e?.message || String(e)}`;
-  } finally {
-    if (browser && browser.sessionId && !browser.isConnected?.()) {
-      await browser.close().catch(() => {});
-    }
-  }
+  const resp = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendPhoto`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: `data:image/png;base64,${r.buffer.toString("base64")}`,
+      caption: `🖼️ ${target}`.slice(0, 200),
+    }),
+  });
+  if (!resp.ok) return `Screenshot captured but Telegram send failed (HTTP ${resp.status}).`;
+  return `Screenshot of ${target} sent to the chat${r.cached ? " (cached)" : ""}.`;
 }
 
 // ===================== Time =====================
