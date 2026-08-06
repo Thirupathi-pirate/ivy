@@ -909,7 +909,15 @@ export async function getYoutubeTranscript(url: string): Promise<string> {
   const track = [...tracks].sort((a, b) => rank(a) - rank(b))[0];
   const tResp = await fetch(`${track.baseUrl}&fmt=json3`, { signal: AbortSignal.timeout(TOOL_CALL_TIMEOUT_MS) });
   if (!tResp.ok) return `Failed to fetch captions (${tResp.status}).`;
-  const data: any = await tResp.json();
+  let data: any;
+  try {
+    data = await tResp.json();
+  } catch {
+    // YouTube can return HTML (consent / bot-check / error pages) with a 200 —
+    // guard the .json() so the tool degrades gracefully instead of throwing
+    // a raw SyntaxError into the model loop.
+    return "YouTube returned an unreadable transcript response (likely an error or consent page). Try again later, or use fetch_url instead.";
+  }
   const events: any[] = data.events || [];
   let text = "";
   for (const ev of events) {
